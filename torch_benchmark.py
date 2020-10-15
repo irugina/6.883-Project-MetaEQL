@@ -181,7 +181,7 @@ class Benchmark:
         for epoch in range(self.n_epochs1 + 2000):  # loop over the dataset multiple times
 
             running_loss = 0.0
-            for i, data in enumerate(trainloader, 0): # TODO
+            for i, data in enumerate(trainloader, 0):  # TODO
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data
 
@@ -207,8 +207,6 @@ class Benchmark:
         # TODO: stage 2 training
 
         print('Finished Training')
-
-
 
         # TODO: Only take GPU memory as needed - allows multiple jobs on a single GPU
         # config = tf.ConfigProto()

@@ -78,9 +78,6 @@ class SymbolicLayerBias(SymbolicLayer):
         super().__init__(funcs, initial_weight, variable, init_stddev)
         self.b = None
 
-    def build(self, in_dim):
-        super().build(in_dim)
-
     def forward(self, x):
         """Multiply by weight matrix and apply activation units"""
         super().__call__(x)
