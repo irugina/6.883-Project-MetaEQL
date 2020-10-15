@@ -3,7 +3,7 @@ from inspect import signature
 
 import torch
 import torch.nn as nn
-import utils.torch_functions as functions
+import utils.functions as functions
 import utils.pretty_print as pretty_print
 import numpy as np
 

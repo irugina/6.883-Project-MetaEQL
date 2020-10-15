@@ -7,9 +7,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils import pretty_print, torch_functions
-from utils.torch_symbolic_network import SymbolicNet
-from utils.torch_regularization import L12Smooth  #, l12_smooth
+from utils import pretty_print, functions
+from utils.symbolic_network import SymbolicNetL0
+from utils.regularization import L12Smooth  #, l12_smooth
 from inspect import signature
 import time
 import argparse
@@ -52,13 +52,13 @@ class Benchmark:
                  n_epochs1=10001, n_epochs2=10001):
         """Set hyper-parameters"""
         self.activation_funcs = [
-            *[torch_functions.Constant()] * 2,
-            *[torch_functions.Identity()] * 4,
-            *[torch_functions.Square()] * 4,
-            *[torch_functions.Sin()] * 2,
-            *[torch_functions.Exp()] * 2,
-            *[torch_functions.Sigmoid()] * 2,
-            *[torch_functions.Product(1.0)] * 2
+            *[functions.Constant()] * 2,
+            *[functions.Identity()] * 4,
+            *[functions.Square()] * 4,
+            *[functions.Sin()] * 2,
+            *[functions.Exp()] * 2,
+            *[functions.Sigmoid()] * 2,
+            *[functions.Product(1.0)] * 2
         ]
 
         self.n_layers = n_layers                # Number of hidden layers
@@ -129,7 +129,7 @@ class Benchmark:
 
         # x_placeholder = tf.placeholder(shape=(None, x_dim), dtype=tf.float32)
         width = len(self.activation_funcs)
-        n_double = torch_functions.count_double(self.activation_funcs)
+        n_double = functions.count_double(self.activation_funcs)
 
         # Arrays to keep track of various quantities as a function of epoch
         loss_list = []          # Total loss (MSE + regularization)
@@ -144,8 +144,7 @@ class Benchmark:
             print("Training on function " + func_name + " Trial " + str(trial+1) + " out of " + str(trials))
 
             # reinitialize for each trial
-            net = SymbolicNet(self.n_layers,
-                              funcs=self.activation_funcs,
+            net = SymbolicNetL0(self.n_layers, in_dim=1, funcs=self.activation_funcs,
                               initial_weights=[
                                   # kind of a hack for truncated normal
                                   torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
@@ -156,10 +155,7 @@ class Benchmark:
 
             criterion = nn.MSELoss()
             optimizer = optim.RMSprop(net.parameters(),
-                                      lr=self.learning_rate * 10,
-                                      momentum=0.0,
-                                      # weight_decay=7
-                                      )
+                                      lr=self.learning_rate * 10, momentum=0.0)
 
             # adapative learning rate
             lmbda = lambda epoch: 0.1 * epoch
@@ -179,13 +175,10 @@ class Benchmark:
 
                     # zero the parameter gradients
                     optimizer.zero_grad()
-                    # forward + backward + optimize
                     outputs = net(inputs)
-                    # TODO
-                    regularization = L12Smooth()
 
                     mse_loss = criterion(outputs, labels)
-                    reg_loss = regularization(net.get_weights_tensor())
+                    reg_loss = net.get_loss()
                     loss = mse_loss + self.reg_weight * reg_loss
 
                     loss.backward()
@@ -233,10 +226,9 @@ class Benchmark:
                     optimizer.zero_grad()
                     # forward + backward + optimize
                     outputs = net(inputs)
-                    regularization = L12Smooth()
 
                     mse_loss = criterion(outputs, labels)
-                    reg_loss = regularization(net.get_weights_tensor())
+                    reg_loss = net.get_loss()
                     loss = mse_loss + self.reg_weight * reg_loss
 
                     loss.backward()
