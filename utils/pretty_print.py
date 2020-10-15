@@ -9,6 +9,9 @@ is already pruned.
 
 import sympy as sym
 import numpy as np
+#local imports
+import sys, os
+sys.path.append(os.path.dirname(__file__))
 import torch_functions as functions
 
 
