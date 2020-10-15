@@ -103,7 +103,6 @@ class Benchmark:
             os.makedirs(func_dir)
 
         # Train network!
-        # TODO
         expr_list, error_test_list = self.train(func, func_name, trials, func_dir)
 
         # Sort the results by test error (increasing) and print them to file
@@ -259,7 +258,7 @@ class Benchmark:
 
                 t1 = time.time()
 
-            tot_time = t1-t0
+            tot_time = t1 - t0
             print(tot_time)
 
             # Print the expressions

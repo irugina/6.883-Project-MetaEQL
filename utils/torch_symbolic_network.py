@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import utils.torch_functions as functions
 import utils.pretty_print as pretty_print
+import numpy as np
 
 
 class SymbolicLayer(nn.Module):
@@ -30,24 +31,19 @@ class SymbolicLayer(nn.Module):
         self.n_double = functions.count_double(funcs)   # Number of activation functions that take 2 inputs
         self.n_single = self.n_funcs - self.n_double    # Number of activation functions that take 1 input
 
+        self.in_dim = in_dim
         self.out_dim = self.n_funcs + self.n_double
 
         if initial_weight is not None:     # use the given initial weight
-            # with tf.name_scope("symbolic_layer"):
-            #     if not variable:
-            #         self.W = tf.Variable(self.initial_weight)
-            #     else:
-            #         self.W = self.initial_weight
-
             self.W = nn.Parameter(initial_weight.clone().detach())  # copies
             self.built = True
         else:
-            self.W = torch.normal(mean=0.0, std=init_stddev, size=(in_dim, self.out_dim))
+            self.W = nn.Parameter(torch.normal(mean=0.0, std=init_stddev, size=(in_dim, self.out_dim)))
 
     def forward(self, x):  # used to be __call__
         """Multiply by weight matrix and apply activation units"""
         g = torch.matmul(x, self.W)         # shape = (?, self.size)
-        output = []  # TODO: will this even work? and could probably be more efficient
+        output = []
 
         in_i = 0    # input index
         out_i = 0   # output index
@@ -91,12 +87,12 @@ class SymbolicLayerBias(SymbolicLayer):
 class SymbolicNet(nn.Module):
     """Symbolic regression network with multiple layers. Produces one output."""
     def __init__(self, symbolic_depth, funcs=None, initial_weights=None, initial_bias=None,
-                 variable=False, init_stddev=0.1):
+                 variable=False, init_stddev=0.1, in_dim=1):
         super(SymbolicNet, self).__init__()
 
         self.depth = symbolic_depth     # Number of hidden layers
         self.funcs = funcs
-        layer_in_dim = [1] + self.depth*[len(funcs)]
+        layer_in_dim = [in_dim] + self.depth*[len(funcs)]
 
         if initial_weights is not None:
             layers = [SymbolicLayer(funcs=funcs, initial_weight=initial_weights[i], variable=variable,
@@ -106,18 +102,12 @@ class SymbolicNet(nn.Module):
 
             self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
 
-            # if not variable:
-            #     self.output_weight = tf.Variable(initial_weights[-1])
-            # else:
-            #     self.output_weight = initial_weights[-1]
         else:
             # Each layer initializes its own weights
-            if isinstance(init_stddev, list):
-                layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i]) for i in range(self.depth)]
-                self.symbolic_layers = nn.Sequential(*layers)
-            else:
-                layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev, in_dim=layer_in_dim[i]) for i in range(self.depth)]
-                self.symbolic_layers = nn.Sequential(*layers)
+            if not isinstance(init_stddev, list):
+                init_stddev = [init_stddev] * self.depth
+            layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i]) for i in range(self.depth)]
+            self.symbolic_layers = nn.Sequential(*layers)
 
             # Initialize weights for last layer (without activation functions)
             # TODO: does indexing into Sequential container work?
@@ -142,78 +132,217 @@ class SymbolicNet(nn.Module):
                [self.output_weight.clone()]
 
 
-n_layers = 2
-activation_funcs = [
-            *[functions.Constant()] * 2,
-            *[functions.Identity()] * 4,
-            *[functions.Square()] * 4,
-            # *[functions.Sin()] * 2,
-            # *[functions.Exp()] * 2,
-            # *[functions.Sigmoid()] * 2,
-            # *[functions.Product()] * 2
-        ]
-var_names = ["x", "y", "z"]
+class SymbolicLayerL0(SymbolicLayer):
+    def __init__(self, in_dim=None, funcs=None, initial_weight=None, variable=False, init_stddev=0.1,
+                 bias=False, droprate_init=0.5, lamba=1.,
+                 beta=2/3, gamma=-0.1, zeta=1.1, epsilon=1e-6):
+        super().__init__(in_dim=in_dim, funcs=funcs, initial_weight=initial_weight, init_stddev=init_stddev)
+        if funcs is None:
+            funcs = functions.default_func
 
-func = lambda x: x
-x_dim = len(signature(func).parameters)  # Number of input arguments to the function
+        self.droprate_init = droprate_init if droprate_init != 0 else 0.5
+        self.use_bias = bias
+        self.lamba = lamba
+        self.bias = None
+        self.eps = None
+        
+        self.beta = beta
+        self.gamma = gamma
+        self.zeta = zeta
+        self.epsilon = epsilon
 
-N = 10
-x = torch.rand((N, x_dim)) * 2 - 1
-width = len(activation_funcs)
-n_double = functions.count_double(activation_funcs)
+        if self.use_bias:
+            self.bias = nn.Parameter(0.1*torch.ones((1, self.out_dim)))
+        self.qz_log_alpha = nn.Parameter(torch.normal(mean=np.log(1 - self.droprate_init) - np.log(self.droprate_init),
+                                         std=1e-2, size=(in_dim, self.out_dim)))
 
-sym = SymbolicNet(n_layers, funcs=activation_funcs,
-                  # initial_weights=[torch.zeros(size=(x_dim, width + n_double)),  # kind of a hack for truncated normal
-                  #                  torch.zeros(size=(width, width + n_double)),
-                  #                  torch.zeros(size=(width, width + n_double)),
-                  #                  torch.zeros(size=(width, 1))],
-                  # initial_weights=[torch.ones(size=(x_dim, width + n_double)),  # kind of a hack for truncated normal
-                  #                  torch.ones(size=(width, width + n_double)),
-                  #                  torch.ones(size=(width, width + n_double)),
-                  #                  torch.ones(size=(width, 1))],
-                  # initial_weights=[torch.fmod(torch.normal(0, 1, size=(x_dim, width + n_double)), 2),  # kind of a hack for truncated normal
-                  #                  torch.fmod(torch.normal(0, 1, size=(width, width + n_double)), 2),
-                  #                  torch.fmod(torch.normal(0, 1, size=(width, width + n_double)), 2),
-                  #                  torch.fmod(torch.normal(0, 1, size=(width, 1)), 2)
-                  #                  ]
-)
+    def quantile_concrete(self, u):
+        """Quantile, aka inverse CDF, of the 'stretched' concrete distribution"""
+        y = torch.sigmoid((torch.log(u) - torch.log(1.0-u) + self.qz_log_alpha) / self.beta)
+        return y * (self.zeta - self.gamma) + self.gamma
+
+    def sample_u(self, shape, reuse_u=False):
+        """Uniform random numbers for concrete distribution"""
+        self.eps = torch.rand(size=shape) * (1 - 2 * self.epsilon) + self.epsilon
+        return self.eps
+
+    def sample_z(self, batch_size, sample=True):
+        """Use the hard concrete distribution as described in https://arxiv.org/abs/1712.01312"""
+        if sample:
+            eps = self.sample_u((batch_size, self.in_dim, self.out_dim))
+            z = self.quantile_concrete(eps)
+            return torch.clamp(z, min=0, max=1)
+        else:   # Mean of the hard concrete distribution
+            pi = torch.sigmoid(self.qz_log_alpha)
+            return torch.clamp(pi * (self.zeta - self.gamma) + self.gamma, min=0.0, max=1.0)
+
+    def get_z_mean(self):
+        """Mean of the hard concrete distribution"""
+        pi = torch.sigmoid(self.qz_log_alpha)
+        return torch.clamp(pi * (self.zeta - self.gamma) + self.gamma, min=0.0, max=1.0)
+
+    def sample_weights(self, reuse_u=False):
+        z = self.quantile_concrete(self.sample_u((self.in_dim, self.out_dim), reuse_u=reuse_u))
+        mask = torch.clamp(z, min=0.0, max=1.0)
+        return mask * self.W
+
+    def get_weight(self):
+        """Deterministic value of weight based on mean of z"""
+        return self.W * self.get_z_mean()
+
+    def loss(self):
+        """Regularization loss term"""
+        return torch.sum(torch.sigmoid(self.qz_log_alpha - self.beta * np.log(-self.gamma / self.zeta)))
+
+    def forward(self, x, sample=True, reuse_u=False):
+        """Multiply by weight matrix and apply activation units"""
+        if sample:
+            h = torch.matmul(x, self.sample_weights(reuse_u=reuse_u))
+        else:
+            w = self.get_weight()
+            h = torch.matmul(x, w)
+
+        if self.use_bias:
+            h = h + self.bias
+
+        # shape of h = (?, self.n_funcs)
+
+        output = []
+        # apply a different activation unit to each column of h
+        in_i = 0    # input index
+        out_i = 0   # output index
+        # Apply functions with only a single input
+        while out_i < self.n_single:
+            output.append(self.funcs[out_i](h[:, in_i]))
+            in_i += 1
+            out_i += 1
+        # Apply functions that take 2 inputs and produce 1 output
+        while out_i < self.n_funcs:
+            output.append(self.funcs[out_i](h[:, in_i], h[:, in_i+1]))
+            in_i += 2
+            out_i += 1
+        output = torch.stack(output, dim=1)
+        return output
 
 
-with torch.no_grad():
-    weights = sym.get_weights()
-    expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
-    print(expr)
+class SymbolicNetL0(nn.Module):
+    """Symbolic regression network with multiple layers. Produces one output."""
+    def __init__(self, symbolic_depth, in_dim=1, funcs=None, initial_weights=None,
+                 variable=False, init_stddev=0.1):
+        super(SymbolicNetL0, self).__init__()
+        self.depth = symbolic_depth  # Number of hidden layers
+        self.funcs = funcs
 
-optimizer = torch.optim.Adam(sym.parameters(), lr=0.01)
-loss_func = torch.nn.MSELoss()
-y = func(x)
-for i in range(1000):
-    yhat = sym(x)
-    reg = torch.tensor(0.)
-    for param in sym.parameters():
-        reg = reg + 0.01*torch.norm(param, 0.5)
-    loss = loss_func(yhat, y) + reg
+        layer_in_dim = [in_dim] + self.depth * [len(funcs)]
+        if initial_weights is not None:
+            layers = [SymbolicLayerL0(funcs=funcs, initial_weight=initial_weights[i], variable=variable,
+                                      in_dim=layer_in_dim[i])
+                                    for i in range(self.depth)]
+            self.symbolic_layers = nn.Sequential(*layers)
+            self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
+        else:
+            # Each layer initializes its own weights
+            if not isinstance(init_stddev, list):
+                init_stddev = [init_stddev] * self.depth
+            layers = [SymbolicLayerL0(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
+                                    for i in range(self.depth)]
+            # Initialize weights for last layer (without activation functions)
+            self.output_weight = nn.Parameter(torch.rand(size=(self.symbolic_layers[-1].n_funcs, 1)) * 2)
+        self.symbolic_layers = nn.Sequential(*layers)
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+    def forward(self, input, sample=True, reuse_u=False):
+        # connect output from previous layer to input of next layer
+        h = input
+        for i in range(self.depth):
+            h = self.symbolic_layers[i](h, sample=sample, reuse_u=reuse_u)
+        # Final output (no activation units) of network
+        h = torch.matmul(h, self.output_weight)
+        return h
 
-optimizer = torch.optim.Adam(sym.parameters(), lr=0.001)
-for i in range(1000):
-    yhat = sym(x)
-    reg = torch.tensor(0.)
-    for param in sym.parameters():
-        reg = reg + 0.01*torch.norm(param, 0.5)
-    loss = loss_func(yhat, y) + reg
+    def get_loss(self):
+        return torch.sum(torch.stack([self.symbolic_layers[i].loss() for i in range(self.depth)]))
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+    def get_weights(self):
+        return self.get_hidden_weights() + [self.get_output_weight()]
 
-with torch.no_grad():
-    weights = sym.get_weights()
-    expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
-    print(expr)
+    def get_hidden_weights(self):
+        return [self.symbolic_layers[i].get_weight() for i in range(self.depth)]
+
+    def get_output_weight(self):
+        return self.output_weight
 
 
-# TODO: SymbolicCell
+if __name__ == '__main__':
+    n_layers = 2
+    activation_funcs = [
+                *[functions.Constant()] * 2,
+                *[functions.Identity()] * 4,
+                *[functions.Square()] * 4,
+                # *[functions.Sin()] * 2,
+                # *[functions.Exp()] * 2,
+                # *[functions.Sigmoid()] * 2,
+                # *[functions.Product()] * 2
+            ]
+    var_names = ["x", "y", "z"]
+    
+    func = lambda x: x
+    x_dim = len(signature(func).parameters)  # Number of input arguments to the function
+    
+    N = 10
+    x = torch.rand((N, x_dim)) * 2 - 1
+    width = len(activation_funcs)
+    n_double = functions.count_double(activation_funcs)
+    
+    sym = SymbolicNet(n_layers, funcs=activation_funcs,
+                      # initial_weights=[torch.zeros(size=(x_dim, width + n_double)),  # kind of a hack for truncated normal
+                      #                  torch.zeros(size=(width, width + n_double)),
+                      #                  torch.zeros(size=(width, width + n_double)),
+                      #                  torch.zeros(size=(width, 1))],
+                      # initial_weights=[torch.ones(size=(x_dim, width + n_double)),  # kind of a hack for truncated normal
+                      #                  torch.ones(size=(width, width + n_double)),
+                      #                  torch.ones(size=(width, width + n_double)),
+                      #                  torch.ones(size=(width, 1))],
+                      # initial_weights=[torch.fmod(torch.normal(0, 1, size=(x_dim, width + n_double)), 2),  # kind of a hack for truncated normal
+                      #                  torch.fmod(torch.normal(0, 1, size=(width, width + n_double)), 2),
+                      #                  torch.fmod(torch.normal(0, 1, size=(width, width + n_double)), 2),
+                      #                  torch.fmod(torch.normal(0, 1, size=(width, 1)), 2)
+                      #                  ]
+    )
+    
+    
+    with torch.no_grad():
+        weights = sym.get_weights()
+        expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
+        print(expr)
+    
+    optimizer = torch.optim.Adam(sym.parameters(), lr=0.01)
+    loss_func = torch.nn.MSELoss()
+    y = func(x)
+    for i in range(1000):
+        yhat = sym(x)
+        reg = torch.tensor(0.)
+        for param in sym.parameters():
+            reg = reg + 0.01*torch.norm(param, 0.5)
+        loss = loss_func(yhat, y) + reg
+    
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    
+    optimizer = torch.optim.Adam(sym.parameters(), lr=0.001)
+    for i in range(1000):
+        yhat = sym(x)
+        reg = torch.tensor(0.)
+        for param in sym.parameters():
+            reg = reg + 0.01*torch.norm(param, 0.5)
+        loss = loss_func(yhat, y) + reg
+    
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    
+    with torch.no_grad():
+        weights = sym.get_weights()
+        expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
+        print(expr)
+    
