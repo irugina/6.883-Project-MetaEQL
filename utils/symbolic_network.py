@@ -11,7 +11,7 @@ import numpy as np
 class SymbolicLayer(nn.Module):
     """Neural network layer for symbolic regression where activation functions correspond to primitive functions.
     Can take multi-input activation functions (like multiplication)"""
-    def __init__(self, funcs=None, initial_weight=None, variable=False, init_stddev=0.1, in_dim=None):
+    def __init__(self, funcs=None, initial_weight=None, init_stddev=0.1, in_dim=None):
         """
         funcs: List of activation functions, using utils.functions
         initial_weight: (Optional) Initial value for weight matrix
@@ -86,8 +86,7 @@ class SymbolicLayerBias(SymbolicLayer):
 
 class SymbolicNet(nn.Module):
     """Symbolic regression network with multiple layers. Produces one output."""
-    def __init__(self, symbolic_depth, funcs=None, initial_weights=None, initial_bias=None,
-                 variable=False, init_stddev=0.1, in_dim=1):
+    def __init__(self, symbolic_depth, funcs=None, initial_weights=None, initial_bias=None, init_stddev=0.1, in_dim=1):
         super(SymbolicNet, self).__init__()
 
         self.depth = symbolic_depth     # Number of hidden layers
@@ -95,27 +94,22 @@ class SymbolicNet(nn.Module):
         layer_in_dim = [in_dim] + self.depth*[len(funcs)]
 
         if initial_weights is not None:
-            layers = [SymbolicLayer(funcs=funcs, initial_weight=initial_weights[i], variable=variable,
-                                    in_dim=layer_in_dim[i])
+            layers = [SymbolicLayer(funcs=funcs, initial_weight=initial_weights[i], in_dim=layer_in_dim[i])
                       for i in range(self.depth)]
-            self.symbolic_layers = nn.Sequential(*layers)
-
             self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
 
         else:
             # Each layer initializes its own weights
             if not isinstance(init_stddev, list):
                 init_stddev = [init_stddev] * self.depth
-            layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i]) for i in range(self.depth)]
-            self.symbolic_layers = nn.Sequential(*layers)
-
+            layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
+                      for i in range(self.depth)]
             # Initialize weights for last layer (without activation functions)
-            # TODO: does indexing into Sequential container work?
-            self.output_weight = nn.Parameter(torch.rand((self.symbolic_layers[-1].n_funcs, 1)))
+            self.output_weight = nn.Parameter(torch.rand((self.hidden_layers[-1].n_funcs, 1)))
+        self.hidden_layers = nn.Sequential(*layers)
 
     def forward(self, input):
-        # Building hidden layers
-        h = self.symbolic_layers(input)
+        h = self.hidden_layers(input)     # Symbolic_layers is nn.Sequential of all the hidden layers
 
         # Final output (no activation units) of network
         return torch.matmul(h, self.output_weight)
@@ -123,22 +117,20 @@ class SymbolicNet(nn.Module):
     def get_weights(self):
         """Return list of weight matrices"""
         # First part is iterating over hidden weights. Then append the output weight.
-        return [self.symbolic_layers[i].get_weight() for i in range(self.depth)] + \
+        return [self.hidden_layers[i].get_weight() for i in range(self.depth)] + \
                [self.output_weight.cpu().detach().numpy()]
 
     def get_weights_tensor(self):
         """Return list of weight matrices as tensors"""
-        return [self.symbolic_layers[i].get_weight_tensor() for i in range(self.depth)] + \
+        return [self.hidden_layers[i].get_weight_tensor() for i in range(self.depth)] + \
                [self.output_weight.clone()]
 
 
 class SymbolicLayerL0(SymbolicLayer):
-    def __init__(self, in_dim=None, funcs=None, initial_weight=None, variable=False, init_stddev=0.1,
+    def __init__(self, in_dim=None, funcs=None, initial_weight=None, init_stddev=0.1,
                  bias=False, droprate_init=0.5, lamba=1.,
                  beta=2/3, gamma=-0.1, zeta=1.1, epsilon=1e-6):
         super().__init__(in_dim=in_dim, funcs=funcs, initial_weight=initial_weight, init_stddev=init_stddev)
-        if funcs is None:
-            funcs = functions.default_func
 
         self.droprate_init = droprate_init if droprate_init != 0 else 0.5
         self.use_bias = bias
@@ -161,7 +153,7 @@ class SymbolicLayerL0(SymbolicLayer):
         y = torch.sigmoid((torch.log(u) - torch.log(1.0-u) + self.qz_log_alpha) / self.beta)
         return y * (self.zeta - self.gamma) + self.gamma
 
-    def sample_u(self, shape, reuse_u=False):
+    def sample_u(self, shape):
         """Uniform random numbers for concrete distribution"""
         self.eps = torch.rand(size=shape) * (1 - 2 * self.epsilon) + self.epsilon
         return self.eps
@@ -181,8 +173,8 @@ class SymbolicLayerL0(SymbolicLayer):
         pi = torch.sigmoid(self.qz_log_alpha)
         return torch.clamp(pi * (self.zeta - self.gamma) + self.gamma, min=0.0, max=1.0)
 
-    def sample_weights(self, reuse_u=False):
-        z = self.quantile_concrete(self.sample_u((self.in_dim, self.out_dim), reuse_u=reuse_u))
+    def sample_weights(self):
+        z = self.quantile_concrete(self.sample_u((self.in_dim, self.out_dim)))
         mask = torch.clamp(z, min=0.0, max=1.0)
         return mask * self.W
 
@@ -194,10 +186,10 @@ class SymbolicLayerL0(SymbolicLayer):
         """Regularization loss term"""
         return torch.sum(torch.sigmoid(self.qz_log_alpha - self.beta * np.log(-self.gamma / self.zeta)))
 
-    def forward(self, x, sample=True, reuse_u=False):
+    def forward(self, x, sample=True):
         """Multiply by weight matrix and apply activation units"""
         if sample:
-            h = torch.matmul(x, self.sample_weights(reuse_u=reuse_u))
+            h = torch.matmul(x, self.sample_weights())
         else:
             w = self.get_weight()
             h = torch.matmul(x, w)
@@ -227,18 +219,16 @@ class SymbolicLayerL0(SymbolicLayer):
 
 class SymbolicNetL0(nn.Module):
     """Symbolic regression network with multiple layers. Produces one output."""
-    def __init__(self, symbolic_depth, in_dim=1, funcs=None, initial_weights=None,
-                 variable=False, init_stddev=0.1):
+    def __init__(self, symbolic_depth, in_dim=1, funcs=None, initial_weights=None, init_stddev=0.1):
         super(SymbolicNetL0, self).__init__()
         self.depth = symbolic_depth  # Number of hidden layers
         self.funcs = funcs
 
         layer_in_dim = [in_dim] + self.depth * [len(funcs)]
         if initial_weights is not None:
-            layers = [SymbolicLayerL0(funcs=funcs, initial_weight=initial_weights[i], variable=variable,
+            layers = [SymbolicLayerL0(funcs=funcs, initial_weight=initial_weights[i],
                                       in_dim=layer_in_dim[i])
                                     for i in range(self.depth)]
-            self.symbolic_layers = nn.Sequential(*layers)
             self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
         else:
             # Each layer initializes its own weights
@@ -247,26 +237,26 @@ class SymbolicNetL0(nn.Module):
             layers = [SymbolicLayerL0(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
                                     for i in range(self.depth)]
             # Initialize weights for last layer (without activation functions)
-            self.output_weight = nn.Parameter(torch.rand(size=(self.symbolic_layers[-1].n_funcs, 1)) * 2)
-        self.symbolic_layers = nn.Sequential(*layers)
+            self.output_weight = nn.Parameter(torch.rand(size=(self.hidden_layers[-1].n_funcs, 1)) * 2)
+        self.hidden_layers = nn.ModuleList(*layers)
 
     def forward(self, input, sample=True, reuse_u=False):
         # connect output from previous layer to input of next layer
         h = input
         for i in range(self.depth):
-            h = self.symbolic_layers[i](h, sample=sample, reuse_u=reuse_u)
+            h = self.hidden_layers[i](h, sample=sample, reuse_u=reuse_u)
         # Final output (no activation units) of network
         h = torch.matmul(h, self.output_weight)
         return h
 
     def get_loss(self):
-        return torch.sum(torch.stack([self.symbolic_layers[i].loss() for i in range(self.depth)]))
+        return torch.sum(torch.stack([self.hidden_layers[i].loss() for i in range(self.depth)]))
 
     def get_weights(self):
         return self.get_hidden_weights() + [self.get_output_weight()]
 
     def get_hidden_weights(self):
-        return [self.symbolic_layers[i].get_weight() for i in range(self.depth)]
+        return [self.hidden_layers[i].get_weight() for i in range(self.depth)]
 
     def get_output_weight(self):
         return self.output_weight
@@ -309,7 +299,6 @@ if __name__ == '__main__':
                       #                  ]
     )
     
-    
     with torch.no_grad():
         weights = sym.get_weights()
         expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
@@ -345,4 +334,4 @@ if __name__ == '__main__':
         weights = sym.get_weights()
         expr = pretty_print.network(weights, activation_funcs, var_names[:x_dim])
         print(expr)
-    
+

@@ -8,11 +8,10 @@ is already pruned.
 """
 
 import sympy as sym
-import numpy as np
 #local imports
 import sys, os
-sys.path.append(os.path.dirname(__file__))
 import utils.functions as functions
+sys.path.append(os.path.dirname(__file__))
 
 
 def apply_activation(W, funcs, n_double=0):
@@ -51,7 +50,7 @@ def apply_activation(W, funcs, n_double=0):
     return W
 
 
-def sym_pp(W_list, funcs, var_names, threshold=0.01, n_double=0):
+def hidden_pp(W_list, funcs, var_names, threshold=0.01, n_double=0):
     """Pretty print the hidden layers (not the last layer) of the symbolic regression network
 
     Arguments:
@@ -99,7 +98,7 @@ def network(weights, funcs, var_names, threshold=0.01):
     n_double = functions.count_double(funcs)
     funcs = [func.sp for func in funcs]
 
-    expr = sym_pp(weights[:-1], funcs, var_names, threshold=threshold, n_double=n_double)
+    expr = hidden_pp(weights[:-1], funcs, var_names, threshold=threshold, n_double=n_double)
     expr = last_pp(expr, weights[-1])
     expr = expr[0, 0]
     return expr
