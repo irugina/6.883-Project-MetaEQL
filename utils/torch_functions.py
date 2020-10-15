@@ -4,7 +4,7 @@ These functions encapsulate multiple implementations (sympy, Tensorflow, numpy) 
 functions can be used in multiple contexts."""
 
 import torch
-import tensorflow as tf
+#import tensorflow as tf
 import numpy as np
 import sympy as sp
 
