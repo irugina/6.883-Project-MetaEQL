@@ -6,34 +6,16 @@ L1/2 promotes sparsity even more than L1. However, it can be difficult to train 
 gradients close to 0. Thus, we introduce a smoothed L1/2 regularization to remove the exploding gradients."""
 
 import torch
+import torch.nn as nn
 
 
-# def l1(input_tensor):
-#     if type(input_tensor) == list:
-#         return sum([l1(tensor) for tensor in input_tensor])
-#     return tf.reduce_sum(tf.abs(input_tensor))
-#
-#
-# def l2_norm(input_tensor):
-#     if type(input_tensor) == list:
-#         return sum([l2_norm(tensor) for tensor in input_tensor])
-#     return tf.reduce_sum(tf.square(input_tensor))
-#
-#
-# def l12_norm(input_tensor):
-#     """L1/2, or L0.5, norm. Note that the gradients go to infinity as the weight approaches 0, so this regularization
-#     is unstable during training. Use l12_smooth instead."""
-#     if type(input_tensor) == list:
-#         return sum([l12_norm(tensor) for tensor in input_tensor])
-#     return tf.reduce_sum(tf.pow(tf.abs(input_tensor), 0.5))
-#
-#
-# def piecewise_l12_l2(input_tensor, a=0.05):
-#     if type(input_tensor) == list:
-#         return sum([piecewise_l12_l2(tensor, a) for tensor in input_tensor])
-#     l2 = tf.square(input_tensor)
-#     l12 = tf.pow(tf.abs(input_tensor), 0.5)
-#     return tf.reduce_sum(tf.where(input_tensor < a, l2, l12))
+class L12Smooth(nn.Module):
+    def __init__(self):
+        super(L12Smooth, self).__init__()
+
+    def forward(self, input_tensor, a=0.05):
+        """input: predictions"""
+        return l12_smooth(input_tensor, a)
 
 
 def l12_smooth(input_tensor, a=0.05):

@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_regularization import l12_smooth
+from utils.torch_regularization import l12_smooth
+
 
 class MSELoss(nn.Module):
     def __init__(self, reg_weight):

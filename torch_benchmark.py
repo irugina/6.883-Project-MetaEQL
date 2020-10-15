@@ -6,11 +6,10 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from utils import torch_functions, pretty_print, MSELoss
-from utils.torch_symbolic_network import SymbolicNet #, MaskedSymbolicNet
-from utils.torch_regularization import l12_smooth
+from utils import pretty_print, torch_functions
+from utils.torch_symbolic_network import SymbolicNet
+from utils.torch_regularization import L12Smooth  #, l12_smooth
 from inspect import signature
 import time
 import argparse
@@ -40,8 +39,8 @@ init_sd_middle = 0.5
 def generate_data(func, N, range_min=DOMAIN[0], range_max=DOMAIN[1]):
     """Generates datasets."""
     x_dim = len(signature(func).parameters)     # Number of inputs to the function, or, dimensionality of x
-    x = (range_max - range_min) * np.random.random([N, x_dim]) + range_min
-    y = np.random.normal([[func(*x_i)] for x_i in x], NOISE_SD)
+    x = (range_max - range_min) * torch.rand([N, x_dim]) + range_min
+    y = torch.tensor([[func(*x_i)] for x_i in x])
     return x, y
 
 
@@ -59,7 +58,7 @@ class Benchmark:
             *[torch_functions.Sin()] * 2,
             *[torch_functions.Exp()] * 2,
             *[torch_functions.Sigmoid()] * 2,
-            *[torch_functions.Product()] * 2
+            *[torch_functions.Product(1.0)] * 2
         ]
 
         self.n_layers = n_layers                # Number of hidden layers
@@ -129,24 +128,9 @@ class Benchmark:
         # Setting up the symbolic regression network
         x_dim = len(signature(func).parameters)  # Number of input arguments to the function
 
-        x_placeholder = tf.placeholder(shape=(None, x_dim), dtype=tf.float32)
+        # x_placeholder = tf.placeholder(shape=(None, x_dim), dtype=tf.float32)
         width = len(self.activation_funcs)
         n_double = torch_functions.count_double(self.activation_funcs)
-
-        # idea for later: put all the training in symbolic net
-        # CALL SYMBOLICNET ON INPUT X
-        y_hat = sym(x_placeholder)
-
-        # DEFINE ERROR AND LOSS
-        error = tf.losses.mean_squared_error(labels=y, predictions=y_hat)
-        error_test = tf.losses.mean_squared_error(labels=y_test, predictions=y_hat)
-        reg_loss = l12_smooth(sym.get_weights())
-        loss = error + self.reg_weight * reg_loss
-
-        # DEFINE LEARNING RATE AND OPTIMIZER TO MINIMIZE DEFINED LOSS
-        learning_rate = tf.placeholder(tf.float32)
-        opt = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-        train = opt.minimize(loss)
 
         # Arrays to keep track of various quantities as a function of epoch
         loss_list = []          # Total loss (MSE + regularization)
@@ -157,64 +141,33 @@ class Benchmark:
         error_test_final = []
         eq_list = []
 
-        # ---------------
-        net = SymbolicNet(self.n_layers,
-                          funcs=self.activation_funcs,
-                          initial_weights=[
-                              # kind of a hack for truncated normal
-                              torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
-                              torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                              torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                              torch.fmod(torch.normal(0, init_sd_last, size=(width, 1)), 2)
-                              ])
-
-        criterion = MSELoss()  # custom loss
-        optimizer = optim.RMSprop(net.parameters(), lr=self.learning_rate * 10, momentum=0.0)
-
-        # TODO
-        # adapative lr
-        # stage 1: < 2000 -> lr * 10, lr o.w.
-        # stage 2: lr / 10
-        lmbda = lambda epoch: 0.1
-        scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
-
-        for epoch in range(self.n_epochs1 + 2000):  # loop over the dataset multiple times
-
-            running_loss = 0.0
-            for i, data in enumerate(trainloader, 0):  # TODO
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward + backward + optimize
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)  # TODO
-                loss.backward()
-                optimizer.step()
-
-                # print statistics
-                running_loss += loss.item()
-                if i % 2000 == 1999:  # print every 2000 mini-batches
-                    print('[%d, %5d] loss: %.3f' %
-                          (epoch + 1, i + 1, running_loss / 2000))
-                    running_loss = 0.0
-
-            if epoch == 2000:
-                scheduler.step()
-
-        # TODO: stage 2 training
-
-        print('Finished Training')
-
-        # TODO: Only take GPU memory as needed - allows multiple jobs on a single GPU
-        # config = tf.ConfigProto()
-        # config.gpu_options.allow_growth = True
-        # with tf.Session(config=config) as sess:
-
         for trial in range(trials):
             print("Training on function " + func_name + " Trial " + str(trial+1) + " out of " + str(trials))
+
+            # reinitialize for each trial
+            net = SymbolicNet(self.n_layers,
+                              funcs=self.activation_funcs,
+                              initial_weights=[
+                                  # kind of a hack for truncated normal
+                                  torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
+                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
+                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
+                                  torch.fmod(torch.normal(0, init_sd_last, size=(width, 1)), 2)
+                              ])
+
+            criterion = nn.MSELoss()
+            optimizer = optim.RMSprop(net.parameters(),
+                                      lr=self.learning_rate * 10,
+                                      momentum=0.0,
+                                      # weight_decay=7
+                                      )
+
+            # adapative learning rate
+            lmbda = lambda epoch: 0.1 * epoch
+            scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
+
+            for param_group in optimizer.param_groups:
+                print("Learning rate: %f" % param_group['lr'])
 
             loss_val = np.nan
             # Restart training if loss goes to NaN (which happens when gradients blow up)
@@ -222,32 +175,50 @@ class Benchmark:
                 t0 = time.time()
 
                 # First stage of training, preceded by 0th warmup stage
-                for i in range(self.n_epochs1 + 2000):
-                    if i < 2000:
-                        lr_i = self.learning_rate * 10
-                    else:
-                        lr_i = self.learning_rate
+                for epoch in range(self.n_epochs1 + 2000):
+                    inputs, labels = x, y
 
-                    # TRAIN WITH THIS INPUT
-                    feed_dict = {x_placeholder: x, learning_rate: lr_i}
-                    _ = sess.run(train, feed_dict=feed_dict)
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+                    # forward + backward + optimize
+                    outputs = net(inputs)
+                    # TODO
+                    regularization = L12Smooth()
 
-                    if i % self.summary_step == 0:
-                        # FIND LOSS, ERROR, REG_LOSS
-                        loss_val, error_val, reg_val, = sess.run((loss, error, reg_loss), feed_dict=feed_dict)
+                    mse_loss = criterion(outputs, labels)
+                    reg_loss = regularization(net.get_weights_tensor())
+                    loss = mse_loss + self.reg_weight * reg_loss
 
-                        # FIND ERROR TEST VAL
-                        error_test_val = sess.run(error_test, feed_dict={x_placeholder: x_test})
-                        print("Epoch: %d\tTotal training loss: %f\tTest error: %f" % (i, loss_val, error_test_val))
+                    loss.backward()
+                    optimizer.step()
 
-                        loss_list.append(loss_val)
+                    if epoch % self.summary_step == 0:
+                        error_val = mse_loss.item()
+                        reg_val = reg_loss.item()
+                        loss_val = error_val + self.reg_weight * reg_val
+                        print("Epoch: %d\tTotal training loss: %f\tReg loss: %f" % (epoch, loss_val, reg_val))
                         error_list.append(error_val)
                         reg_list.append(reg_val)
-                        error_test_list.append(error_test_val)
+                        loss_list.append(loss_val)
+
+                        # TODO: error test val
+                        # loss_val, error_val, reg_val, = sess.run((loss, error, reg_loss), feed_dict=feed_dict)
+                        # error_test_val = sess.run(error_test, feed_dict={x_placeholder: x_test})
+                        # print("Epoch: %d\tTotal training loss: %f\tTest error: %f" % (i, loss_val, error_test_val))
+
+                        # error_list.append(error_val)
+                        # error_test_list.append(error_test_val)
                         if np.isnan(loss_val):  # If loss goes to NaN, restart training
                             break
 
-                t1 = time.time()
+                    if epoch == 2000:
+                        scheduler.step()  # lr /= 10
+                        for param_group in optimizer.param_groups:
+                            print(param_group['lr'])
+
+                # scheduler.step()  # lr /= 10 again
+                for param_group in optimizer.param_groups:
+                    print("Learning rate: %f" % param_group['lr'])
 
                 # # Masked network - weights below a threshold are set to 0 and frozen. This is the fine-tuning stage
                 # sym_masked = MaskedSymbolicNet(sess, sym)
@@ -255,36 +226,47 @@ class Benchmark:
                 # error_masked = tf.losses.mean_squared_error(labels=y, predictions=y_hat_masked)
                 # error_test_masked = tf.losses.mean_squared_error(labels=y_test, predictions=y_hat_masked)
                 # train_masked = opt.minimize(error_masked)
-                #
-                # # 2nd stage of training
-                # t2 = time.time()
-                #
-                # for i in range(self.n_epochs2):
-                #     feed_dict = {x_placeholder: x, learning_rate: self.learning_rate / 10}
-                #     _ = sess.run(train_masked, feed_dict=feed_dict)
-                #     if i % self.summary_step == 0:
-                #         loss_val, error_val = sess.run((loss, error_masked), feed_dict=feed_dict)
-                #         error_test_val = sess.run(error_test_masked, feed_dict={x_placeholder: x_test})
-                #         print("Epoch: %d\tTotal training loss: %f\tTest error: %f" % (i, loss_val, error_test_val))
-                #         loss_list.append(loss_val)
-                #         error_list.append(error_val)
-                #         error_test_list.append(error_test_val)
-                #         if np.isnan(loss_val):  # If loss goes to NaN, restart training
-                #             break
-                #
-                # t3 = time.time()
 
-            # tot_time = t1-t0 + t3-t2
+                for epoch in range(self.n_epochs2):
+                    inputs, labels = x, y
+
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+                    # forward + backward + optimize
+                    outputs = net(inputs)
+                    regularization = L12Smooth()
+
+                    mse_loss = criterion(outputs, labels)
+                    reg_loss = regularization(net.get_weights_tensor())
+                    loss = mse_loss + self.reg_weight * reg_loss
+
+                    loss.backward()
+                    optimizer.step()
+
+                    if epoch % self.summary_step == 0:
+                        error_val = mse_loss.item()
+                        reg_val = reg_loss.item()
+                        loss_val = error_val + self.reg_weight * reg_val
+                        print("Epoch: %d\tTotal training loss: %f\tReg loss: %f" % (epoch, loss_val, reg_val))
+                        error_list.append(error_val)
+                        reg_list.append(reg_val)
+                        loss_list.append(loss_val)
+
+                        # TODO: error test val
+
+                        if np.isnan(loss_val):  # If loss goes to NaN, restart training
+                            break
+
+                t1 = time.time()
+
             tot_time = t1-t0
             print(tot_time)
 
             # Print the expressions
-
-            # GET THE WEIGHTS
-            # note to self: need to do this with no_grad()?
-            weights = sym.get_weights()
-            expr = pretty_print.network(weights, self.activation_funcs, var_names[:x_dim])
-            print(expr)
+            with torch.no_grad():
+                weights = net.get_weights()
+                expr = pretty_print.network(weights, self.activation_funcs, var_names[:x_dim])
+                print(expr)
 
             # Save results
             trial_file = os.path.join(func_dir, 'trial%d.pickle' % trial)
@@ -300,7 +282,7 @@ class Benchmark:
             with open(trial_file, "wb+") as f:
                 pickle.dump(results, f)
 
-            error_test_final.append(error_test_list[-1])
+            # error_test_final.append(error_test_list[-1])
             eq_list.append(expr)
 
         return eq_list, error_test_final

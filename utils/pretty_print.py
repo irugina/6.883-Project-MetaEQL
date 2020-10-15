@@ -12,7 +12,7 @@ import numpy as np
 #local imports
 import sys, os
 sys.path.append(os.path.dirname(__file__))
-import torch_functions as functions
+import utils.torch_functions as functions
 
 
 def apply_activation(W, funcs, n_double=0):

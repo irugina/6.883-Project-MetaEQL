@@ -3,8 +3,8 @@ from inspect import signature
 
 import torch
 import torch.nn as nn
-import torch_functions as functions
-import pretty_print
+import utils.torch_functions as functions
+import utils.pretty_print as pretty_print
 
 
 class SymbolicLayer(nn.Module):
@@ -39,7 +39,7 @@ class SymbolicLayer(nn.Module):
             #     else:
             #         self.W = self.initial_weight
 
-            self.W = nn.Parameter(self.initial_weight.clone().detach())  # copies
+            self.W = nn.Parameter(initial_weight.clone().detach())  # copies
             self.built = True
         else:
             self.W = torch.normal(mean=0.0, std=init_stddev, size=(in_dim, self.out_dim))
@@ -70,6 +70,9 @@ class SymbolicLayer(nn.Module):
 
     def get_weight(self):
         return self.W.cpu().detach().numpy()
+
+    def get_weight_tensor(self):
+        return self.W.clone()
 
 
 class SymbolicLayerBias(SymbolicLayer):
@@ -132,6 +135,11 @@ class SymbolicNet(nn.Module):
         # First part is iterating over hidden weights. Then append the output weight.
         return [self.symbolic_layers[i].get_weight() for i in range(self.depth)] + \
                [self.output_weight.cpu().detach().numpy()]
+
+    def get_weights_tensor(self):
+        """Return list of weight matrices as tensors"""
+        return [self.symbolic_layers[i].get_weight_tensor() for i in range(self.depth)] + \
+               [self.output_weight.clone()]
 
 
 n_layers = 2
