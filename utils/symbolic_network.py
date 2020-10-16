@@ -238,16 +238,12 @@ class SymbolicNetL0(nn.Module):
                                     for i in range(self.depth)]
             # Initialize weights for last layer (without activation functions)
             self.output_weight = nn.Parameter(torch.rand(size=(self.hidden_layers[-1].n_funcs, 1)) * 2)
-        self.hidden_layers = nn.ModuleList(*layers)
+        self.hidden_layers = nn.Sequential(*layers)
 
     def forward(self, input, sample=True, reuse_u=False):
-        # connect output from previous layer to input of next layer
-        h = input
-        for i in range(self.depth):
-            h = self.hidden_layers[i](h, sample=sample, reuse_u=reuse_u)
+        h = self.hidden_layers(input)     # Symbolic_layers is nn.Sequential of all the hidden layers
         # Final output (no activation units) of network
-        h = torch.matmul(h, self.output_weight)
-        return h
+        return torch.matmul(h, self.output_weight)
 
     def get_loss(self):
         return torch.sum(torch.stack([self.hidden_layers[i].loss() for i in range(self.depth)]))
