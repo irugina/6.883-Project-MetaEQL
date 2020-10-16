@@ -8,12 +8,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from utils import pretty_print, functions
-from utils.symbolic_network import SymbolicNetL0
+from utils.symbolic_network import SymbolicNet
 from utils.regularization import L12Smooth  #, l12_smooth
 from inspect import signature
 import time
 import argparse
-import json
 
 from feynman_ai_equations import equation_dict
 from benchmark import *
@@ -25,6 +24,7 @@ class Benchmark(BaseBenchmark):
     def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
                  n_epochs1=10001, n_epochs2=10001):
         super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2)
+
 
     def train(self, func, func_name='', trials=1, func_dir='results/test'):
         """Train the network to find a given function"""
@@ -53,7 +53,8 @@ class Benchmark(BaseBenchmark):
             print("Training on function " + func_name + " Trial " + str(trial+1) + " out of " + str(trials))
 
             # reinitialize for each trial
-            net = SymbolicNetL0(self.n_layers, in_dim=1, funcs=self.activation_funcs,
+            net = SymbolicNet(self.n_layers,
+                              funcs=self.activation_funcs,
                               initial_weights=[
                                   # kind of a hack for truncated normal
                                   torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
@@ -64,7 +65,10 @@ class Benchmark(BaseBenchmark):
 
             criterion = nn.MSELoss()
             optimizer = optim.RMSprop(net.parameters(),
-                                      lr=self.learning_rate * 10, momentum=0.0)
+                                      lr=self.learning_rate * 10,
+                                      momentum=0.0,
+                                      # weight_decay=7
+                                      )
 
             # adapative learning rate
             lmbda = lambda epoch: 0.1 * epoch
@@ -84,10 +88,13 @@ class Benchmark(BaseBenchmark):
 
                     # zero the parameter gradients
                     optimizer.zero_grad()
+                    # forward + backward + optimize
                     outputs = net(inputs)
+                    # TODO
+                    regularization = L12Smooth()
 
                     mse_loss = criterion(outputs, labels)
-                    reg_loss = net.get_loss()
+                    reg_loss = regularization(net.get_weights_tensor())
                     loss = mse_loss + self.reg_weight * reg_loss
 
                     loss.backward()
@@ -135,9 +142,10 @@ class Benchmark(BaseBenchmark):
                     optimizer.zero_grad()
                     # forward + backward + optimize
                     outputs = net(inputs)
+                    regularization = L12Smooth()
 
                     mse_loss = criterion(outputs, labels)
-                    reg_loss = net.get_loss()
+                    reg_loss = regularization(net.get_weights_tensor())
                     loss = mse_loss + self.reg_weight * reg_loss
 
                     loss.backward()
@@ -206,14 +214,13 @@ if __name__ == "__main__":
     if not os.path.exists(kwargs['results_dir']):
         os.makedirs(kwargs['results_dir'])
     meta = open(os.path.join(kwargs['results_dir'], 'args.txt'), 'a')
+    import json
     meta.write(json.dumps(kwargs))
     meta.close()
 
     bench = Benchmark(**kwargs)
 
-    func_name = "exp1"
-    bench.benchmark(equation_dict[func_name], func_name=func_name, trials=10)
-    # bench.benchmark(lambda x: x, func_name="x", trials=10)
+    bench.benchmark(lambda x: x, func_name="x", trials=10)
     # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
     # bench.benchmark(lambda x: x**3, func_name="x^3", trials=20)
     # bench.benchmark(lambda x: np.sin(2*np.pi*x), func_name="sin(2pix)", trials=20)

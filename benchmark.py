@@ -14,7 +14,6 @@ from inspect import signature
 import time
 import argparse
 
-
 N_TRAIN = 256       # Size of training dataset
 N_VAL = 100         # Size of validation dataset
 DOMAIN = (-1, 1)    # Domain of dataset - range from which we sample x
@@ -35,7 +34,6 @@ init_sd_middle = 0.5
 # init_sd_last = 0.1
 # init_sd_middle = 0.1
 
-
 def generate_data(func, N, range_min=DOMAIN[0], range_max=DOMAIN[1]):
     """Generates datasets."""
     x_dim = len(signature(func).parameters)     # Number of inputs to the function, or, dimensionality of x
@@ -44,7 +42,7 @@ def generate_data(func, N, range_min=DOMAIN[0], range_max=DOMAIN[1]):
     return x, y
 
 
-class Benchmark:
+class BaseBenchmark:
     """Benchmark object just holds the results directory (results_dir) to save to and the hyper-parameters. So it is
     assumed all the results in results_dir share the same hyper-parameters. This is useful for benchmarking multiple
     functions with the same hyper-parameters."""
@@ -116,176 +114,6 @@ class Benchmark:
         for i in range(trials):
             fi.write("[%f]\t\t%s\n" % (error_test_sorted[i], str(expr_list_sorted[i])))
         fi.close()
-
-    def train(self, func, func_name='', trials=1, func_dir='results/test'):
-        """Train the network to find a given function"""
-
-        x, y = generate_data(func, N_TRAIN)
-        # x_val, y_val = generate_data(func, N_VAL)
-        x_test, y_test = generate_data(func, N_TEST, range_min=DOMAIN_TEST[0], range_max=DOMAIN_TEST[1])
-
-        # Setting up the symbolic regression network
-        x_dim = len(signature(func).parameters)  # Number of input arguments to the function
-
-        # x_placeholder = tf.placeholder(shape=(None, x_dim), dtype=tf.float32)
-        width = len(self.activation_funcs)
-        n_double = functions.count_double(self.activation_funcs)
-
-        # Arrays to keep track of various quantities as a function of epoch
-        loss_list = []          # Total loss (MSE + regularization)
-        error_list = []         # MSE
-        reg_list = []           # Regularization
-        error_test_list = []    # Test error
-
-        error_test_final = []
-        eq_list = []
-
-        for trial in range(trials):
-            print("Training on function " + func_name + " Trial " + str(trial+1) + " out of " + str(trials))
-
-            # reinitialize for each trial
-            net = SymbolicNet(self.n_layers,
-                              funcs=self.activation_funcs,
-                              initial_weights=[
-                                  # kind of a hack for truncated normal
-                                  torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_last, size=(width, 1)), 2)
-                              ])
-
-            criterion = nn.MSELoss()
-            optimizer = optim.RMSprop(net.parameters(),
-                                      lr=self.learning_rate * 10,
-                                      momentum=0.0,
-                                      # weight_decay=7
-                                      )
-
-            # adapative learning rate
-            lmbda = lambda epoch: 0.1 * epoch
-            scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
-
-            for param_group in optimizer.param_groups:
-                print("Learning rate: %f" % param_group['lr'])
-
-            loss_val = np.nan
-            # Restart training if loss goes to NaN (which happens when gradients blow up)
-            while np.isnan(loss_val):
-                t0 = time.time()
-
-                # First stage of training, preceded by 0th warmup stage
-                for epoch in range(self.n_epochs1 + 2000):
-                    inputs, labels = x, y
-
-                    # zero the parameter gradients
-                    optimizer.zero_grad()
-                    # forward + backward + optimize
-                    outputs = net(inputs)
-                    # TODO
-                    regularization = L12Smooth()
-
-                    mse_loss = criterion(outputs, labels)
-                    reg_loss = regularization(net.get_weights_tensor())
-                    loss = mse_loss + self.reg_weight * reg_loss
-
-                    loss.backward()
-                    optimizer.step()
-
-                    if epoch % self.summary_step == 0:
-                        error_val = mse_loss.item()
-                        reg_val = reg_loss.item()
-                        loss_val = error_val + self.reg_weight * reg_val
-                        print("Epoch: %d\tTotal training loss: %f\tReg loss: %f" % (epoch, loss_val, reg_val))
-                        error_list.append(error_val)
-                        reg_list.append(reg_val)
-                        loss_list.append(loss_val)
-
-                        # TODO: error test val
-                        # loss_val, error_val, reg_val, = sess.run((loss, error, reg_loss), feed_dict=feed_dict)
-                        # error_test_val = sess.run(error_test, feed_dict={x_placeholder: x_test})
-                        # print("Epoch: %d\tTotal training loss: %f\tTest error: %f" % (i, loss_val, error_test_val))
-
-                        # error_list.append(error_val)
-                        # error_test_list.append(error_test_val)
-                        if np.isnan(loss_val):  # If loss goes to NaN, restart training
-                            break
-
-                    if epoch == 2000:
-                        scheduler.step()  # lr /= 10
-                        for param_group in optimizer.param_groups:
-                            print(param_group['lr'])
-
-                # scheduler.step()  # lr /= 10 again
-                for param_group in optimizer.param_groups:
-                    print("Learning rate: %f" % param_group['lr'])
-
-                # # Masked network - weights below a threshold are set to 0 and frozen. This is the fine-tuning stage
-                # sym_masked = MaskedSymbolicNet(sess, sym)
-                # y_hat_masked = sym_masked(x_placeholder)
-                # error_masked = tf.losses.mean_squared_error(labels=y, predictions=y_hat_masked)
-                # error_test_masked = tf.losses.mean_squared_error(labels=y_test, predictions=y_hat_masked)
-                # train_masked = opt.minimize(error_masked)
-
-                for epoch in range(self.n_epochs2):
-                    inputs, labels = x, y
-
-                    # zero the parameter gradients
-                    optimizer.zero_grad()
-                    # forward + backward + optimize
-                    outputs = net(inputs)
-                    regularization = L12Smooth()
-
-                    mse_loss = criterion(outputs, labels)
-                    reg_loss = regularization(net.get_weights_tensor())
-                    loss = mse_loss + self.reg_weight * reg_loss
-
-                    loss.backward()
-                    optimizer.step()
-
-                    if epoch % self.summary_step == 0:
-                        error_val = mse_loss.item()
-                        reg_val = reg_loss.item()
-                        loss_val = error_val + self.reg_weight * reg_val
-                        print("Epoch: %d\tTotal training loss: %f\tReg loss: %f" % (epoch, loss_val, reg_val))
-                        error_list.append(error_val)
-                        reg_list.append(reg_val)
-                        loss_list.append(loss_val)
-
-                        # TODO: error test val
-
-                        if np.isnan(loss_val):  # If loss goes to NaN, restart training
-                            break
-
-                t1 = time.time()
-
-            tot_time = t1 - t0
-            print(tot_time)
-
-            # Print the expressions
-            with torch.no_grad():
-                weights = net.get_weights()
-                expr = pretty_print.network(weights, self.activation_funcs, var_names[:x_dim])
-                print(expr)
-
-            # Save results
-            trial_file = os.path.join(func_dir, 'trial%d.pickle' % trial)
-            results = {
-                "weights": weights,
-                "loss_list": loss_list,
-                "error_list": error_list,
-                "reg_list": reg_list,
-                "error_test": error_test_list,
-                "expr": expr,
-                "runtime": tot_time
-            }
-            with open(trial_file, "wb+") as f:
-                pickle.dump(results, f)
-
-            # error_test_final.append(error_test_list[-1])
-            eq_list.append(expr)
-
-        return eq_list, error_test_final
-
 
 if __name__ == "__main__":
 
