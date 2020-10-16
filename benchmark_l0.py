@@ -13,7 +13,8 @@ from utils.regularization import L12Smooth  #, l12_smooth
 from inspect import signature
 import time
 import argparse
-
+from feynman_ai_equations import equation_dict
+import json
 
 N_TRAIN = 256       # Size of training dataset
 N_VAL = 100         # Size of validation dataset
@@ -297,13 +298,14 @@ if __name__ == "__main__":
     if not os.path.exists(kwargs['results_dir']):
         os.makedirs(kwargs['results_dir'])
     meta = open(os.path.join(kwargs['results_dir'], 'args.txt'), 'a')
-    import json
     meta.write(json.dumps(kwargs))
     meta.close()
 
     bench = Benchmark(**kwargs)
 
-    bench.benchmark(lambda x: x, func_name="x", trials=10)
+    func_name = "exp1"
+    bench.benchmark(equation_dict[func_name], func_name=func_name, trials=10)
+    # bench.benchmark(lambda x: x, func_name="x", trials=10)
     # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
     # bench.benchmark(lambda x: x**3, func_name="x^3", trials=20)
     # bench.benchmark(lambda x: np.sin(2*np.pi*x), func_name="sin(2pix)", trials=20)
