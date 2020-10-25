@@ -161,8 +161,6 @@ if __name__ == "__main__":
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
     parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
     parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
-    parser.add_argument("--n-epochs2", type=int, default=10001,
-                        help="Number of epochs to train the second stage, after freezing weights.")
 
     args = parser.parse_args()
     kwargs = vars(args)
