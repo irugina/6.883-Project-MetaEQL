@@ -128,43 +128,6 @@ class Benchmark(BaseBenchmark):
                 for param_group in optimizer.param_groups:
                     print("Learning rate: %f" % param_group['lr'])
 
-                # # Masked network - weights below a threshold are set to 0 and frozen. This is the fine-tuning stage
-                # sym_masked = MaskedSymbolicNet(sess, sym)
-                # y_hat_masked = sym_masked(x_placeholder)
-                # error_masked = tf.losses.mean_squared_error(labels=y, predictions=y_hat_masked)
-                # error_test_masked = tf.losses.mean_squared_error(labels=y_test, predictions=y_hat_masked)
-                # train_masked = opt.minimize(error_masked)
-
-                for epoch in range(self.n_epochs2):
-                    inputs, labels = x, y
-
-                    # zero the parameter gradients
-                    optimizer.zero_grad()
-                    # forward + backward + optimize
-                    outputs = net(inputs)
-                    regularization = L12Smooth()
-
-                    mse_loss = criterion(outputs, labels)
-                    reg_loss = regularization(net.get_weights_tensor())
-                    loss = mse_loss + self.reg_weight * reg_loss
-
-                    loss.backward()
-                    optimizer.step()
-
-                    if epoch % self.summary_step == 0:
-                        error_val = mse_loss.item()
-                        reg_val = reg_loss.item()
-                        loss_val = error_val + self.reg_weight * reg_val
-                        print("Epoch: %d\tTotal training loss: %f\tReg loss: %f" % (epoch, loss_val, reg_val))
-                        error_list.append(error_val)
-                        reg_list.append(reg_val)
-                        loss_list.append(loss_val)
-
-                        # TODO: error test val
-
-                        if np.isnan(loss_val):  # If loss goes to NaN, restart training
-                            break
-
                 t1 = time.time()
 
             tot_time = t1 - t0
