@@ -56,16 +56,22 @@ class Benchmark(BaseBenchmark):
             trials: number of trials to train from scratch. Will save the results for each trial.
         """
         opt = optim.Adam(self.net.parameters(), self.meta_lr)
-        iterations = 1000
+        iterations = 10000
+
+        equations = dict()
+        train_losses = dict()
+        for func_name in func_names:
+            equations[func_name] = []
+            train_losses[func_name] = []
         for counter in range(iterations):
-            verbose = (counter + 1) % 25 == 0
+            verbose = (counter + 1) % 250 == 0
             opt.zero_grad()
             eval_loss = 0
             for func_name in func_names:
                 func = equation_dict[func_name]
                 assert self.x_dim == len(signature(func).parameters)
                 # adapt to func
-                eql_for_func = self.adapt(func, func_name, verbose)
+                eql_for_func = self.adapt(func, func_name, verbose, equations, train_losses)
                 # eval task performance
                 x, y = generate_data(func, N_QUERY)
                 inputs, labels = x, y
@@ -75,6 +81,15 @@ class Benchmark(BaseBenchmark):
             for p in self.net.parameters():
                 p.grad.data.mul_(1.0 / len(func_names))
             opt.step()
+
+        for func_name in func_names:
+            fi = open(os.path.join(self.results_dir, 'eq_summary_{}.txt'.format(func_name)), 'w')
+            fi.write("\n{}\n".format(func_name))
+            for expr in equations[func_name]:
+                fi.write("%s\n" % (str(expr)))
+            fi.close()
+            np.save(os.path.join(self.results_dir, 'train_curve_{}'.format(func_name)), train_losses[func_name])
+
 
     def get_loss(self, model, inputs, labels):
         # MSE loss
@@ -87,10 +102,9 @@ class Benchmark(BaseBenchmark):
         loss = mse_loss + self.reg_weight * reg_loss
         return loss
 
-    def adapt(self, func, func_name='', verbose=False):
+    def adapt(self, func, func_name='', verbose=False, equations = None, train_losses = None):
         if verbose:
             print ("****adapting to function {}****".format(func_name))
-        """adapt the network to find a given function"""
 
         x, y = generate_data(func, N_SUPPORT)
         inputs, labels = x, y
@@ -140,6 +154,10 @@ class Benchmark(BaseBenchmark):
                 weights = learner.get_weights()
                 expr = pretty_print.network(weights, self.activation_funcs, var_names[:self.x_dim])
                 print(expr)
+                if equations is not None:
+                    equations[func_name].append(expr)
+                if train_losses is not None:
+                    train_losses[func_name].append(loss)
 
         return adapted_learner
 
