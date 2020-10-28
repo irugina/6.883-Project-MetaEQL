@@ -28,12 +28,12 @@ class Benchmark(BaseBenchmark):
     functions with the same hyper-parameters."""
 
     def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
-                 n_epochs1=10001, n_epochs2=10001, x_dim=1):
+                 n_epochs1=10001, n_epochs2=10001, x_dim=1, m=1, exp_number=None):
         """try to learn multiple functions within the same experiment
         for now assume they all take the same number of input variables
         additional arg x_dim
         """
-        super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2)
+        super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2, m)
         # meta-learning stuff: shared net and
         self.x_dim = x_dim
         width = len(self.activation_funcs)
@@ -202,18 +202,30 @@ if __name__ == "__main__":
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
     parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
     parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
+    parser.add_argument("--m", type=int, default=1, help="Increase Number of Activation Functions")
+    parser.add_argument("--exp_number", type=int, default=1, help="Which Combination of Tasks to Use")
 
     args = parser.parse_args()
     kwargs = vars(args)
     print(kwargs)
 
-    if not os.path.exists(kwargs['results_dir']):
-        os.makedirs(kwargs['results_dir'])
-    meta = open(os.path.join(kwargs['results_dir'], 'args.txt'), 'a')
+    results_dir = kwargs['results_dir']
+    results_dir = os.path.join(results_dir, "m_{}_exp_{}".format(kwargs['m'], kwargs['exp_number']))
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    kwargs['results_dir'] = results_dir
+    meta = open(os.path.join(results_dir, 'args.txt'), 'a')
     meta.write(json.dumps(kwargs))
     meta.close()
 
     bench = Benchmark(**kwargs)
 
-    func_names = ["id", "gaussian1",  "exp", "sin", "f1", "f2"]
+    if kwargs['exp_number'] == 1:
+        func_names = ["gaussian1"]
+    if kwargs['exp_number'] == 3:
+        func_names = ["id", "gaussian1",  "exp"]
+    if kwargs['exp_number'] == 5:
+        func_names = ["id", "gaussian1",  "exp", "sin", "f1"]
+    if kwargs['exp_number'] == 7:
+        func_names = ["id", "gaussian1",  "exp", "sin", "f1", "f2"]
     bench.meta_learn(func_names=func_names, trials=10)
