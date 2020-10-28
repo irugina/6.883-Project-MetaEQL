@@ -20,7 +20,7 @@ import json
 from feynman_ai_equations import equation_dict
 from benchmark import *
 
-N_SUPPORT, N_QUERY = 10, 10
+N_SUPPORT, N_QUERY = 100, 100
 
 class Benchmark(BaseBenchmark):
     """Benchmark object just holds the results directory (results_dir) to save to and the hyper-parameters. So it is
@@ -68,11 +68,10 @@ class Benchmark(BaseBenchmark):
             opt.zero_grad()
             eval_loss = 0
             for func_name in func_names:
-                print ("Adapt to function {}".format(func_name))
                 func = equation_dict[func_name]
                 assert self.x_dim == len(signature(func).parameters)
                 # adapt to func
-                eql_for_func = self.adapt(func, func_name)
+                eql_for_func = self.adapt(func, func_name, verbose, equations, train_losses)
                 # eval task performance
                 x, y = generate_data(func, N_QUERY)
                 inputs, labels = x, y
@@ -82,6 +81,15 @@ class Benchmark(BaseBenchmark):
             for p in self.net.parameters():
                 p.grad.data.mul_(1.0 / len(func_names))
             opt.step()
+
+        for func_name in func_names:
+            fi = open(os.path.join(self.results_dir, 'eq_summary_{}.txt'.format(func_name)), 'w')
+            fi.write("\n{}\n".format(func_name))
+            for expr in equations[func_name]:
+                fi.write("%s\n" % (str(expr)))
+            fi.close()
+            np.save(os.path.join(self.results_dir, 'train_curve_{}'.format(func_name)), train_losses[func_name])
+
 
     def get_loss(self, model, inputs, labels):
         # MSE loss
@@ -94,8 +102,9 @@ class Benchmark(BaseBenchmark):
         loss = mse_loss + self.reg_weight * reg_loss
         return loss
 
-    def adapt(self, func, func_name=''):
-        """adapt the network to find a given function"""
+    def adapt(self, func, func_name='', verbose=False, equations = None, train_losses = None):
+        if verbose:
+            print ("****adapting to function {}****".format(func_name))
 
         x, y = generate_data(func, N_SUPPORT)
         inputs, labels = x, y
@@ -140,6 +149,16 @@ class Benchmark(BaseBenchmark):
         # Update the module
         adapted_learner = self.maml_update(learner, self.learning_rate, gradients)
         # -------------------------------------------------------------------------------end learn2learn excerpt
+        if verbose:
+            with torch.no_grad():
+                weights = learner.get_weights()
+                expr = pretty_print.network(weights, self.activation_funcs, var_names[:self.x_dim])
+                print(expr)
+                if equations is not None:
+                    equations[func_name].append(expr)
+                if train_losses is not None:
+                    train_losses[func_name].append(loss)
+
         return adapted_learner
 
     def maml_update(self, model, lr, grads=None):
@@ -183,8 +202,6 @@ if __name__ == "__main__":
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
     parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
     parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
-    parser.add_argument("--n-epochs2", type=int, default=10001,
-                        help="Number of epochs to train the second stage, after freezing weights.")
 
     args = parser.parse_args()
     kwargs = vars(args)
@@ -198,5 +215,5 @@ if __name__ == "__main__":
 
     bench = Benchmark(**kwargs)
 
-    func_names = ["id", "exp1"]
+    func_names = ["id", "gaussian1",  "exp", "sin", "f1", "f2"]
     bench.meta_learn(func_names=func_names, trials=10)
