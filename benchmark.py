@@ -34,7 +34,6 @@ init_sd_middle = 0.5
 # init_sd_last = 0.1
 # init_sd_middle = 0.1
 
-
 def generate_data(func, N, range_min=DOMAIN[0], range_max=DOMAIN[1]):
     """Generates datasets."""
     x_dim = len(signature(func).parameters)     # Number of inputs to the function, or, dimensionality of x
@@ -57,8 +56,7 @@ class BaseBenchmark:
             *[functions.Sin()] * 2,
             *[functions.Exp()] * 2,
             *[functions.Sigmoid()] * 2,
-            # *[functions.Reciprocal(1.0)] * 2,
-            *[functions.Product(1.0)] * 2,
+            *[functions.Product(1.0)] * 2
         ]
 
         self.n_layers = n_layers                # Number of hidden layers
@@ -116,46 +114,4 @@ class BaseBenchmark:
         for i in range(trials):
             fi.write("[%f]\t\t%s\n" % (error_test_sorted[i], str(expr_list_sorted[i])))
         fi.close()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train the EQL network.")
-    parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
-    parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
-    parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
-    parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
-    parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
-    parser.add_argument("--n-epochs2", type=int, default=10001,
-                        help="Number of epochs to train the second stage, after freezing weights.")
-
-    args = parser.parse_args()
-    kwargs = vars(args)
-    print(kwargs)
-
-    if not os.path.exists(kwargs['results_dir']):
-        os.makedirs(kwargs['results_dir'])
-    meta = open(os.path.join(kwargs['results_dir'], 'args.txt'), 'a')
-    import json
-    meta.write(json.dumps(kwargs))
-    meta.close()
-
-    bench = BaseBenchmark(**kwargs)
-
-    bench.benchmark(lambda x: x, func_name="x", trials=10)
-    # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
-    # bench.benchmark(lambda x: x**3, func_name="x^3", trials=20)
-    # bench.benchmark(lambda x: np.sin(2*np.pi*x), func_name="sin(2pix)", trials=20)
-    # bench.benchmark(lambda x: np.exp(x), func_name="e^x", trials=20)
-    # bench.benchmark(lambda x, y: x*y, func_name="xy", trials=20)
-    # bench.benchmark(lambda x, y: np.sin(2 * np.pi * x) + np.sin(4*np.pi * y),
-    #                 func_name="sin(2pix)+sin(4py)", trials=20)
-    # bench.benchmark(lambda x, y, z: 0.5*x*y + 0.5*z, func_name="0.5xy+0.5z", trials=20)
-    # bench.benchmark(lambda x, y, z: x**2 + y - 2*z, func_name="x^2+y-2z", trials=20)
-    # bench.benchmark(lambda x: np.exp(-x**2), func_name="e^-x^2", trials=20)
-    # bench.benchmark(lambda x: 1 / (1 + np.exp(-10*x)), func_name="sigmoid(10x)", trials=20)
-    # bench.benchmark(lambda x, y: x**2 + np.sin(2*np.pi*y), func_name="x^2+sin(2piy)", trials=20)
-
-    # 3-layer functions
-    # bench.benchmark(lambda x, y, z: (x+y*z)**3, func_name="(x+yz)^3", trials=20)
-
 

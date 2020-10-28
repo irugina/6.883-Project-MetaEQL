@@ -56,8 +56,15 @@ class Benchmark(BaseBenchmark):
             trials: number of trials to train from scratch. Will save the results for each trial.
         """
         opt = optim.Adam(self.net.parameters(), self.meta_lr)
-        iterations = 1  # TODO
-        for _ in range(iterations):
+        iterations = 10000
+
+        equations = dict()
+        train_losses = dict()
+        for func_name in func_names:
+            equations[func_name] = []
+            train_losses[func_name] = []
+        for counter in range(iterations):
+            verbose = (counter + 1) % 250 == 0
             opt.zero_grad()
             eval_loss = 0
             for func_name in func_names:
