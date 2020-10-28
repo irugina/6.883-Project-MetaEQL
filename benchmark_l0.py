@@ -1,7 +1,6 @@
 """Trains the deep symbolic regression architecture on given functions to produce a simple equation that describes
 the dataset."""
 
-import pickle
 import numpy as np
 import os
 import torch
@@ -9,8 +8,6 @@ import torch.nn as nn
 import torch.optim as optim
 from utils import pretty_print, functions
 from utils.symbolic_network import SymbolicNetL0
-from utils.regularization import L12Smooth  #, l12_smooth
-from inspect import signature
 import time
 import argparse
 import json
@@ -18,13 +15,41 @@ import json
 from feynman_ai_equations import equation_dict
 from benchmark import *
 
+
 class Benchmark(BaseBenchmark):
     """Benchmark object just holds the results directory (results_dir) to save to and the hyper-parameters. So it is
     assumed all the results in results_dir share the same hyper-parameters. This is useful for benchmarking multiple
     functions with the same hyper-parameters."""
-    def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
-                 n_epochs1=10001, n_epochs2=10001):
-        super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2)
+    def __init__(self, results_dir, n_layers=2, reg_weight=1e-2, learning_rate=1e-2,
+                 n_epochs1=10001):
+        super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1,)
+        self.activation_funcs = [[
+            *[functions.Constant()] * 2,
+            *[functions.Identity()] * 10,
+            # *[functions.Square()] * 4,
+            # *[functions.Sin()] * 2,
+            *[functions.Exp()] * 2,
+            *[functions.Sigmoid()] * 2,
+            # *[functions.Reciprocal(1.0)] * 2,
+            # *[functions.Product(1.0)] * 2,
+        ],
+        [
+            *[functions.Constant()] * 2,
+            *[functions.Identity()] * 4,
+            *[functions.Square()] * 4,
+            # *[functions.Sin()] * 2,
+            # *[functions.Exp()] * 2,
+            *[functions.Sigmoid()] * 2,
+            *[functions.Division(1.0)] * 2,
+            # *[functions.Product(1.0)] * 2,
+        ],
+        # [
+        #     # *[functions.Constant()] * 2,
+        #     # *[functions.Identity()] * 4,
+        #     # *[functions.Reciprocal(1.0)] * 2,
+        #     *[functions.Division(1.0)] * 2,
+        # ]
+        ]
 
     def train(self, func, func_name='', trials=1, func_dir='results/test'):
         """Train the network to find a given function"""
@@ -36,9 +61,18 @@ class Benchmark(BaseBenchmark):
         # Setting up the symbolic regression network
         x_dim = len(signature(func).parameters)  # Number of input arguments to the function
 
-        # x_placeholder = tf.placeholder(shape=(None, x_dim), dtype=tf.float32)
-        width = len(self.activation_funcs)
-        n_double = functions.count_double(self.activation_funcs)
+        if not any(isinstance(el, list) for el in self.activation_funcs):
+            self.activation_funcs = [self.activation_funcs] * self.n_layers
+
+        # width = [len(func_i) for func_i in self.activation_funcs]
+        # n_double = [functions.count_double(func_i) for func_i in self.activation_funcs]
+        # initial_weights=[
+        #     # kind of a hack for truncated normal
+        #     torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width[0] + n_double[0])), 2),
+        #     torch.fmod(torch.normal(0, init_sd_middle, size=(width[0], width[1] + n_double[1])), 2),
+        #     torch.fmod(torch.normal(0, init_sd_last, size=(width[1], 1)), 2)
+        # ]
+        initial_weights = None
 
         # Arrays to keep track of various quantities as a function of epoch
         loss_list = []          # Total loss (MSE + regularization)
@@ -52,30 +86,24 @@ class Benchmark(BaseBenchmark):
         for trial in range(trials):
             print("Training on function " + func_name + " Trial " + str(trial+1) + " out of " + str(trials))
 
-            # reinitialize for each trial
-            net = SymbolicNetL0(self.n_layers, in_dim=1, funcs=self.activation_funcs,
-                              initial_weights=[
-                                  # kind of a hack for truncated normal
-                                  torch.fmod(torch.normal(0, init_sd_first, size=(x_dim, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
-                                  torch.fmod(torch.normal(0, init_sd_last, size=(width, 1)), 2)
-                              ])
-
             criterion = nn.MSELoss()
-            optimizer = optim.RMSprop(net.parameters(),
-                                      lr=self.learning_rate * 10, momentum=0.0)
-
-            # adapative learning rate
-            lmbda = lambda epoch: 0.1 * epoch
-            scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
-
-            for param_group in optimizer.param_groups:
-                print("Learning rate: %f" % param_group['lr'])
 
             loss_val = np.nan
             # Restart training if loss goes to NaN (which happens when gradients blow up)
             while np.isnan(loss_val):
+
+                # reinitialize for each trial
+                net = SymbolicNetL0(self.n_layers, in_dim=x_dim, funcs=self.activation_funcs,
+                                    initial_weights=initial_weights)
+                optimizer = optim.Adam(net.parameters(), lr=self.learning_rate)
+
+                # adapative learning rate
+                lmbda = lambda epoch: 0.1 * epoch
+                scheduler = optim.lr_scheduler.MultiplicativeLR(optimizer, lr_lambda=lmbda)
+
+                for param_group in optimizer.param_groups:
+                    print("Learning rate: %f" % param_group['lr'])
+
                 t0 = time.time()
 
                 # First stage of training, preceded by 0th warmup stage
@@ -91,6 +119,7 @@ class Benchmark(BaseBenchmark):
                     loss = mse_loss + self.reg_weight * reg_loss
 
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.01)
                     optimizer.step()
 
                     if epoch % self.summary_step == 0:
@@ -112,15 +141,10 @@ class Benchmark(BaseBenchmark):
                         if np.isnan(loss_val):  # If loss goes to NaN, restart training
                             break
 
-                    if epoch == 2000:
+                    if epoch == 100:
                         scheduler.step()  # lr /= 10
                         for param_group in optimizer.param_groups:
-                            print(param_group['lr'])
-
-                # scheduler.step()  # lr /= 10 again
-                for param_group in optimizer.param_groups:
-                    print("Learning rate: %f" % param_group['lr'])
-
+                            print("Learning rate: %f" % param_group['lr'])
 
                 t1 = time.time()
 
@@ -158,11 +182,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train the EQL network.")
     parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
     parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
-    parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
-    parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
+    parser.add_argument("--reg-weight", type=float, default=1e-2, help='Regularization weight, lambda')
+    parser.add_argument('--learning-rate', type=float, default=1e-1, help='Base learning rate for training')
     parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
-    parser.add_argument("--n-epochs2", type=int, default=10001,
-                        help="Number of epochs to train the second stage, after freezing weights.")
 
     args = parser.parse_args()
     kwargs = vars(args)
@@ -177,7 +199,9 @@ if __name__ == "__main__":
     bench = Benchmark(**kwargs)
 
     func_name = "exp1"
-    bench.benchmark(equation_dict[func_name], func_name=func_name, trials=10)
+    # bench.benchmark(equation_dict[func_name], func_name=func_name, trials=10)
+    # bench.benchmark(lambda x: 1/x, func_name="1divx", trials=10)
+    bench.benchmark(lambda x, y: x / y, func_name="xdivy", trials=10)
     # bench.benchmark(lambda x: x, func_name="x", trials=10)
     # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
     # bench.benchmark(lambda x: x**3, func_name="x^3", trials=20)

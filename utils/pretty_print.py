@@ -50,7 +50,7 @@ def apply_activation(W, funcs, n_double=0):
     return W
 
 
-def hidden_pp(W_list, funcs, var_names, threshold=0.01, n_double=0):
+def hidden_pp(W_list, funcs, var_names, threshold=0.01):
     """Pretty print the hidden layers (not the last layer) of the symbolic regression network
 
     Arguments:
@@ -71,11 +71,16 @@ def hidden_pp(W_list, funcs, var_names, threshold=0.01, n_double=0):
             vars.append(var)
     expr = sym.Matrix(vars).T
     # W_list = np.asarray(W_list)
-    for W in W_list:
+
+    if not any(isinstance(el, list) for el in funcs):
+        funcs = [funcs] * len(W_list)
+
+    for W, funcs_i in zip(W_list, funcs):
+        n_double = functions.count_double(funcs_i)
+        funcs_i = [func.sp for func in funcs_i]
         W = filter_mat(sym.Matrix(W), threshold=threshold)
         expr = expr * W
-        expr = apply_activation(expr, funcs, n_double=n_double)
-    # expr = expr * W_list[-1]
+        expr = apply_activation(expr, funcs_i, n_double=n_double)
     return expr
 
 
@@ -89,16 +94,13 @@ def network(weights, funcs, var_names, threshold=0.01):
 
     Arguments:
         weights: list of weight matrices for the entire network
-        funcs:  list of lambda functions using sympy. has the same size as W_list[i][j, :]
+        funcs:  list of BaseFunctions. has the same size as W_list[i][j, :]
         var_names: list of strings for names of variables
         threshold: threshold for filtering expression. set to 0 for no filtering.
 
     Returns:
         Simplified sympy expression."""
-    n_double = functions.count_double(funcs)
-    funcs = [func.sp for func in funcs]
-
-    expr = hidden_pp(weights[:-1], funcs, var_names, threshold=threshold, n_double=n_double)
+    expr = hidden_pp(weights[:-1], funcs, var_names, threshold=threshold)
     expr = last_pp(expr, weights[-1])
     expr = expr[0, 0]
     return expr

@@ -56,7 +56,7 @@ class Benchmark(BaseBenchmark):
             trials: number of trials to train from scratch. Will save the results for each trial.
         """
         opt = optim.Adam(self.net.parameters(), self.meta_lr)
-        iterations = 1 #TODO
+        iterations = 1  # TODO
         for _ in range(iterations):
             opt.zero_grad()
             eval_loss = 0

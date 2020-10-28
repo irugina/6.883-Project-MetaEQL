@@ -176,6 +176,33 @@ class Product(BaseFunction2):
         return x*y / self.norm
 
 
+class Reciprocal(BaseFunction):
+    def __init__(self, norm=1.0, theta=0.1):
+        super().__init__(norm=norm)
+        self.theta = theta  # Lower threshold
+
+    def torch(self, x):
+        """Piecewise function, f(x)=0 if x < theta and 1/x otherwise. Theta is a threshold hyperparameter."""
+        return torch.where(x > self.theta, 1/x, torch.zeros(1)) / self.norm
+        # return torch.clamp(1/x, 0, 1 / self.theta) / self.norm
+
+    def sp(self, x):
+        return 1 / x / self.norm
+
+
+class Division(BaseFunction2):
+    def __init__(self, norm=1.0, theta=0.01):
+        super().__init__(norm=norm)
+        self.theta = theta
+
+    def torch(self, x, y):
+        """Piecewise function, f(x, y)=0 if y < theta and x/y otherwise. Theta is a threshold hyperparameter."""
+        return torch.where(y > 0, x / y, torch.zeros_like(x)) / self.norm
+
+    def sp(self, x, y):
+        return x / y / self.norm
+
+
 def count_inputs(funcs):
     i = 0
     for func in funcs:

@@ -27,6 +27,7 @@ class SymbolicLayer(nn.Module):
         self.built = False  # Boolean whether weights have been initialized
 
         self.n_funcs = len(funcs)                       # Number of activation functions (and number of layer outputs)
+        self.func_objects = funcs                       # Function objects
         self.funcs = [func.torch for func in funcs]     # Convert functions to list of PyTorch functions
         self.n_double = functions.count_double(funcs)   # Number of activation functions that take 2 inputs
         self.n_single = self.n_funcs - self.n_double    # Number of activation functions that take 1 input
@@ -39,6 +40,9 @@ class SymbolicLayer(nn.Module):
             self.built = True
         else:
             self.W = nn.Parameter(torch.normal(mean=0.0, std=init_stddev, size=(in_dim, self.out_dim)))
+
+        self.theta = 0.01
+        self.penalty = torch.zeros(1)    # Penalty for the division term
 
     def forward(self, x):  # used to be __call__
         """Multiply by weight matrix and apply activation units"""
@@ -89,12 +93,16 @@ class SymbolicNet(nn.Module):
     def __init__(self, symbolic_depth, funcs=None, initial_weights=None, initial_bias=None, init_stddev=0.1, in_dim=1):
         super(SymbolicNet, self).__init__()
 
-        self.depth = symbolic_depth     # Number of hidden layers
-        self.funcs = funcs
-        layer_in_dim = [in_dim] + self.depth*[len(funcs)]
+        if any(isinstance(el, list) for el in funcs):
+            self.funcs = funcs
+            self.depth = len(funcs)
+        else:
+            self.depth = symbolic_depth  # Number of hidden layers
+            self.funcs = [funcs] * symbolic_depth
+        layer_in_dim = [in_dim] + [len(funcs_i) for funcs_i in self.funcs]
 
         if initial_weights is not None:
-            layers = [SymbolicLayer(funcs=funcs, initial_weight=initial_weights[i], in_dim=layer_in_dim[i])
+            layers = [SymbolicLayer(funcs=self.funcs[i], initial_weight=initial_weights[i], in_dim=layer_in_dim[i])
                       for i in range(self.depth)]
             self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
 
@@ -102,10 +110,10 @@ class SymbolicNet(nn.Module):
             # Each layer initializes its own weights
             if not isinstance(init_stddev, list):
                 init_stddev = [init_stddev] * self.depth
-            layers = [SymbolicLayer(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
+            layers = [SymbolicLayer(funcs=self.funcs[i], init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
                       for i in range(self.depth)]
             # Initialize weights for last layer (without activation functions)
-            self.output_weight = nn.Parameter(torch.rand((self.hidden_layers[-1].n_funcs, 1)))
+            self.output_weight = nn.Parameter(torch.rand((layers[-1].n_funcs, 1)))
         self.hidden_layers = nn.Sequential(*layers)
 
     def forward(self, input):
@@ -184,7 +192,9 @@ class SymbolicLayerL0(SymbolicLayer):
 
     def loss(self):
         """Regularization loss term"""
-        return torch.sum(torch.sigmoid(self.qz_log_alpha - self.beta * np.log(-self.gamma / self.zeta)))
+        # print(torch.sum(self.penalty))
+        return torch.sum(torch.sigmoid(self.qz_log_alpha - self.beta * np.log(-self.gamma / self.zeta))) + \
+               torch.sum(self.penalty)
 
     def forward(self, x, sample=True):
         """Multiply by weight matrix and apply activation units"""
@@ -198,6 +208,7 @@ class SymbolicLayerL0(SymbolicLayer):
             h = h + self.bias
 
         # shape of h = (?, self.n_funcs)
+        self.penalty = torch.zeros(1)
 
         output = []
         # apply a different activation unit to each column of h
@@ -205,11 +216,15 @@ class SymbolicLayerL0(SymbolicLayer):
         out_i = 0   # output index
         # Apply functions with only a single input
         while out_i < self.n_single:
+            if isinstance(self.func_objects[out_i], functions.Reciprocal):
+                self.penalty = self.penalty + torch.max(self.theta - h[:, in_i], torch.zeros_like(h[:, in_i]))
             output.append(self.funcs[out_i](h[:, in_i]))
             in_i += 1
             out_i += 1
         # Apply functions that take 2 inputs and produce 1 output
         while out_i < self.n_funcs:
+            if isinstance(self.func_objects[out_i], functions.Division):
+                self.penalty = self.penalty + torch.max(self.theta - h[:, in_i+1], torch.zeros_like(h[:, in_i+1]))
             output.append(self.funcs[out_i](h[:, in_i], h[:, in_i+1]))
             in_i += 2
             out_i += 1
@@ -219,25 +234,41 @@ class SymbolicLayerL0(SymbolicLayer):
 
 class SymbolicNetL0(nn.Module):
     """Symbolic regression network with multiple layers. Produces one output."""
-    def __init__(self, symbolic_depth, in_dim=1, funcs=None, initial_weights=None, init_stddev=0.1):
+    def __init__(self, symbolic_depth=2, in_dim=1, funcs=None, initial_weights=None, init_stddev=0.1):
+        """
+        Arguments:
+        symbolic_depth:     Number of hidden layers. This can be ignored if funcs is given as a list of list of
+                            functions - one list per hidden layer.
+        in_dim:             int, input dimensionality
+        funcs:              Either a list of functions (so each hidden layer uses the same functions) or a list of list
+                            of functions (so each hidden layer could use different functions)
+        initial_weights:    initial weights - must match the tensor size
+        init_stddev:        initial weight standard deviation. this is used if initial_weights is not given
+        """
         super(SymbolicNetL0, self).__init__()
-        self.depth = symbolic_depth  # Number of hidden layers
-        self.funcs = funcs
 
-        layer_in_dim = [in_dim] + self.depth * [len(funcs)]
+        # self.funcs is made into a list of list of functions, one list for each hidden layer
+        if any(isinstance(el, list) for el in funcs):
+            self.funcs = funcs
+            self.depth = len(funcs)
+        else:
+            self.depth = symbolic_depth  # Number of hidden layers
+            self.funcs = [funcs] * symbolic_depth
+
+        layer_in_dim = [in_dim] + [len(funcs_i) for funcs_i in self.funcs]  # input dimensionality for each layer
         if initial_weights is not None:
-            layers = [SymbolicLayerL0(funcs=funcs, initial_weight=initial_weights[i],
+            layers = [SymbolicLayerL0(funcs=self.funcs[i], initial_weight=initial_weights[i],
                                       in_dim=layer_in_dim[i])
-                                    for i in range(self.depth)]
+                      for i in range(self.depth)]
             self.output_weight = nn.Parameter(initial_weights[-1].clone().detach())
         else:
             # Each layer initializes its own weights
             if not isinstance(init_stddev, list):
                 init_stddev = [init_stddev] * self.depth
-            layers = [SymbolicLayerL0(funcs=funcs, init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
-                                    for i in range(self.depth)]
+            layers = [SymbolicLayerL0(funcs=self.funcs[i], init_stddev=init_stddev[i], in_dim=layer_in_dim[i])
+                      for i in range(self.depth)]
             # Initialize weights for last layer (without activation functions)
-            self.output_weight = nn.Parameter(torch.rand(size=(self.hidden_layers[-1].n_funcs, 1)) * 2)
+            self.output_weight = nn.Parameter(torch.rand(size=(layers[-1].n_funcs, 1)) * 2)
         self.hidden_layers = nn.Sequential(*layers)
 
     def forward(self, input, sample=True, reuse_u=False):

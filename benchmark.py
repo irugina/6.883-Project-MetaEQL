@@ -34,6 +34,7 @@ init_sd_middle = 0.5
 # init_sd_last = 0.1
 # init_sd_middle = 0.1
 
+
 def generate_data(func, N, range_min=DOMAIN[0], range_max=DOMAIN[1]):
     """Generates datasets."""
     x_dim = len(signature(func).parameters)     # Number of inputs to the function, or, dimensionality of x
@@ -56,7 +57,8 @@ class BaseBenchmark:
             *[functions.Sin()] * 2,
             *[functions.Exp()] * 2,
             *[functions.Sigmoid()] * 2,
-            *[functions.Product(1.0)] * 2
+            # *[functions.Reciprocal(1.0)] * 2,
+            *[functions.Product(1.0)] * 2,
         ]
 
         self.n_layers = n_layers                # Number of hidden layers
@@ -115,8 +117,8 @@ class BaseBenchmark:
             fi.write("[%f]\t\t%s\n" % (error_test_sorted[i], str(expr_list_sorted[i])))
         fi.close()
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train the EQL network.")
     parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
     parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
@@ -137,7 +139,7 @@ if __name__ == "__main__":
     meta.write(json.dumps(kwargs))
     meta.close()
 
-    bench = Benchmark(**kwargs)
+    bench = BaseBenchmark(**kwargs)
 
     bench.benchmark(lambda x: x, func_name="x", trials=10)
     # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
