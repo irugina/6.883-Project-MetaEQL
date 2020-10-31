@@ -27,28 +27,28 @@ class Benchmark(BaseBenchmark):
             *[functions.Constant()] * 2,
             *[functions.Identity()] * 10,
             # *[functions.Square()] * 4,
-            # *[functions.Sin()] * 2,
-            *[functions.Exp()] * 2,
-            *[functions.Sigmoid()] * 2,
+            *[functions.Sin()] * 10,
+            # *[functions.Exp()] * 2,
+            # *[functions.Sigmoid()] * 2,
             # *[functions.Reciprocal(1.0)] * 2,
-            # *[functions.Product(1.0)] * 2,
+            *[functions.Product(1.0)] * 10,
         ],
         [
             *[functions.Constant()] * 2,
-            *[functions.Identity()] * 4,
-            *[functions.Square()] * 4,
-            # *[functions.Sin()] * 2,
+            *[functions.Identity()] * 10,
+            # *[functions.Square()] * 4,
+            *[functions.Sin()] * 10,
             # *[functions.Exp()] * 2,
-            *[functions.Sigmoid()] * 2,
-            *[functions.Division(1.0)] * 2,
-            # *[functions.Product(1.0)] * 2,
+            # *[functions.Sigmoid()] * 2,
+            # *[functions.Division(1.0)] * 2,
+            *[functions.Product(1.0)] * 10,
         ],
-        # [
-        #     # *[functions.Constant()] * 2,
-        #     # *[functions.Identity()] * 4,
-        #     # *[functions.Reciprocal(1.0)] * 2,
-        #     *[functions.Division(1.0)] * 2,
-        # ]
+        [
+            # *[functions.Constant()] * 2,
+            # *[functions.Identity()] * 4,
+            # *[functions.Reciprocal(1.0)] * 2,
+            *[functions.Division(1.0)] * 2,
+        ]
         ]
 
     def train(self, func, func_name='', trials=1, func_dir='results/test'):
@@ -201,7 +201,8 @@ if __name__ == "__main__":
     func_name = "exp1"
     # bench.benchmark(equation_dict[func_name], func_name=func_name, trials=10)
     # bench.benchmark(lambda x: 1/x, func_name="1divx", trials=10)
-    bench.benchmark(lambda x, y: x / y, func_name="xdivy", trials=10)
+    # bench.benchmark(lambda x, y: x / y, func_name="xdivy", trials=10)
+    bench.benchmark(lambda x, y: np.sin(np.pi * x) / (y**2 + 1), func_name="div-test", trials=10)
     # bench.benchmark(lambda x: x, func_name="x", trials=10)
     # bench.benchmark(lambda x: x**2, func_name="x^2", trials=20)
     # bench.benchmark(lambda x: x**3, func_name="x^3", trials=20)
