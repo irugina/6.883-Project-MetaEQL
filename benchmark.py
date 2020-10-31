@@ -47,16 +47,16 @@ class BaseBenchmark:
     assumed all the results in results_dir share the same hyper-parameters. This is useful for benchmarking multiple
     functions with the same hyper-parameters."""
     def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
-                 n_epochs1=10001, n_epochs2=10001):
+                 n_epochs1=10001, n_epochs2=10001, m=1):
         """Set hyper-parameters"""
         self.activation_funcs = [
-            *[functions.Constant()] * 2,
-            *[functions.Identity()] * 4,
-            *[functions.Square()] * 4,
-            *[functions.Sin()] * 2,
-            *[functions.Exp()] * 2,
-            *[functions.Sigmoid()] * 2,
-            *[functions.Product(1.0)] * 2
+            *[functions.Constant()] * 2 * m,
+            *[functions.Identity()] * 4 * m,
+            *[functions.Square()] * 4 * m,
+            *[functions.Sin()] * 2 * m,
+            *[functions.Exp()] * 2 * m,
+            *[functions.Sigmoid()] * 2 * m,
+            *[functions.Product(1.0)] * 2 * m
         ]
 
         self.n_layers = n_layers                # Number of hidden layers
@@ -65,6 +65,7 @@ class BaseBenchmark:
         self.summary_step = 1000                # Number of iterations at which to print to screen
         self.n_epochs1 = n_epochs1
         self.n_epochs2 = n_epochs2
+        self.m = m
 
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
@@ -79,6 +80,7 @@ class BaseBenchmark:
             "activation_funcs_name": [func.name for func in self.activation_funcs],
             "n_layers": self.n_layers,
             "reg_weight": self.reg_weight,
+            'n_func_multiplier': self.m
         }
         with open(os.path.join(self.results_dir, 'params.pickle'), "wb+") as f:
             pickle.dump(result, f)
