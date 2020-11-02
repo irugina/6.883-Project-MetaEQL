@@ -27,13 +27,13 @@ class Benchmark(BaseBenchmark):
     assumed all the results in results_dir share the same hyper-parameters. This is useful for benchmarking multiple
     functions with the same hyper-parameters."""
 
-    def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
-                 n_epochs1=10001, n_epochs2=10001, x_dim=1, m=1, exp_number=None, train_mode='joint'):
+    def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, inner_learning_rate=1e-2, outer_learning_rate=1e-2,
+                 n_epochs1=10001, x_dim=1, m=1, exp_number=None, train_mode='joint'):
         """try to learn multiple functions within the same experiment
         for now assume they all take the same number of input variables
         additional arg x_dim
         """
-        super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2, m)
+        super().__init__(results_dir, n_layers, reg_weight, None, n_epochs1, None, m) #None from learning_rate and n_epochs2
         # meta-learning stuff: shared net and
         self.x_dim = x_dim
         width = len(self.activation_funcs)
@@ -47,7 +47,8 @@ class Benchmark(BaseBenchmark):
                                   torch.fmod(torch.normal(0, init_sd_middle, size=(width, width + n_double)), 2),
                                   torch.fmod(torch.normal(0, init_sd_last, size=(width, 1)), 2)
                               ])
-        self.meta_lr = self.learning_rate
+        self.inner_learning_rate = inner_learning_rate
+        self.outer_learning_rate = outer_learning_rate
         self.train_mode = train_mode
 
     def meta_learn(self, func_names, trials):
@@ -56,7 +57,7 @@ class Benchmark(BaseBenchmark):
             func_names: list of strings that describes the functions
             trials: number of trials to train from scratch. Will save the results for each trial.
         """
-        opt = optim.Adam(self.net.parameters(), self.meta_lr)
+        opt = optim.Adam(self.net.parameters(), self.outer_learning_rate)
         iterations = 10000
         equations = dict()
         train_losses = dict()
@@ -169,7 +170,7 @@ class Benchmark(BaseBenchmark):
                 print('learn2learn: Maybe try with allow_nograd=True and/or allow_unused=True ?')
 
         # Update the module
-        adapted_learner = self.maml_update(learner, self.learning_rate, gradients)
+        adapted_learner = self.maml_update(learner, self.inner_learning_rate, gradients)
         # -------------------------------------------------------------------------------end learn2learn excerpt
         if verbose:
             with torch.no_grad():
@@ -223,7 +224,8 @@ if __name__ == "__main__":
     parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
     parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
-    parser.add_argument('--learning-rate', type=float, default=1e-2, help='Base learning rate for training')
+    parser.add_argument('--inner_learning_rate', type=float, default=5e-3, help='inner learning rate for training')
+    parser.add_argument('--outer_learning_rate', type=float, default=1e-2, help='outer learning rate for training')
     parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
     parser.add_argument("--m", type=int, default=1, help="Increase Number of Activation Functions")
     parser.add_argument("--exp_number", type=int, default=1, help="Which Combination of Tasks to Use")
