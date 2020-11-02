@@ -58,7 +58,11 @@ class Benchmark(BaseBenchmark):
             trials: number of trials to train from scratch. Will save the results for each trial.
         """
         opt = optim.Adam(self.net.parameters(), self.outer_learning_rate)
-        iterations = 10000
+#        def scheduler_function(epoch):
+#            if epoch < self.n_epochs1: return 1
+#            else: return 0.9
+#        scheduler = torch.optim.lr_scheduler.MultiplicativeLR(opt, lr_lambda=scheduler_function)
+
         equations = dict()
         train_losses = dict()
         for func_name in func_names:
@@ -67,7 +71,7 @@ class Benchmark(BaseBenchmark):
 
 
         if self.train_mode == "maml":# ------------------------------------------------------------------------------------------------ each iteration is one MAML outer loop
-            for counter in range(iterations):
+            for counter in range(self.n_epochs1):
                 verbose = (counter + 1) % 250 == 0
                 opt.zero_grad()
                 eval_loss = 0
@@ -85,8 +89,9 @@ class Benchmark(BaseBenchmark):
                 for p in self.net.parameters():
                     p.grad.data.mul_(1.0 / len(func_names))
                 opt.step()
+#                scheduler.step()
         if self.train_mode == "joint": # ------------------------------------------------------------------------------------------------ joint training
-            for counter in range(iterations):
+            for counter in range(self.n_epochs1):
                 verbose = (counter + 1) % 250 == 0
                 for func_name in func_names:
                     # get function, do fwd pass, compute loss
@@ -104,6 +109,7 @@ class Benchmark(BaseBenchmark):
                             print(expr)
                             equations[func_name].append(expr)
                             train_losses[func_name].append(loss)
+#                    scheduler.step()
 
         for func_name in func_names: # ------------------------------------------------------------------------------------------------ write results to disk
             fi = open(os.path.join(self.results_dir, 'eq_summary_{}.txt'.format(func_name)), 'w')
@@ -224,9 +230,9 @@ if __name__ == "__main__":
     parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
     parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
-    parser.add_argument('--inner_learning_rate', type=float, default=5e-3, help='inner learning rate for training')
+    parser.add_argument('--inner_learning_rate', type=float, default=1e-1, help='inner learning rate for training')
     parser.add_argument('--outer_learning_rate', type=float, default=1e-2, help='outer learning rate for training')
-    parser.add_argument("--n-epochs1", type=int, default=10001, help="Number of epochs to train the first stage")
+    parser.add_argument("--n-epochs1", type=int, default=20001, help="Number of epochs to train the first stage")
     parser.add_argument("--m", type=int, default=1, help="Increase Number of Activation Functions")
     parser.add_argument("--exp_number", type=int, default=1, help="Which Combination of Tasks to Use")
 
