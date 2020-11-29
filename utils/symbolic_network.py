@@ -231,6 +231,9 @@ class SymbolicLayerL0(SymbolicLayer):
         output = torch.stack(output, dim=1)
         return output
 
+    def get_weight_tensor(self):
+        return self.get_weight().clone()
+
 
 class SymbolicNetL0(nn.Module):
     """Symbolic regression network with multiple layers. Produces one output."""
@@ -287,6 +290,11 @@ class SymbolicNetL0(nn.Module):
 
     def get_output_weight(self):
         return self.output_weight
+
+    def get_weights_tensor(self):
+        """Return list of weight matrices as tensors"""
+        return [self.hidden_layers[i].get_weight_tensor() for i in range(self.depth)] + \
+               [self.output_weight.clone()]
 
 
 if __name__ == '__main__':

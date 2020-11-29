@@ -17,6 +17,7 @@ import argparse
 from feynman_ai_equations import equation_dict
 from benchmark import *
 
+
 class Benchmark(BaseBenchmark):
     """Benchmark object just holds the results directory (results_dir) to save to and the hyper-parameters. So it is
     assumed all the results in results_dir share the same hyper-parameters. This is useful for benchmarking multiple
@@ -24,7 +25,6 @@ class Benchmark(BaseBenchmark):
     def __init__(self, results_dir, n_layers=2, reg_weight=5e-3, learning_rate=1e-2,
                  n_epochs1=10001, n_epochs2=10001):
         super().__init__(results_dir, n_layers, reg_weight, learning_rate, n_epochs1, n_epochs2)
-
 
     def train(self, func, func_name='', trials=1, func_dir='results/test'):
         """Train the network to find a given function"""

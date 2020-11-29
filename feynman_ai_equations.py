@@ -3,7 +3,7 @@ import random
 
 
 equation_dict = {
-    "id": lambda x: x, #this is not from feynman ai
+    "id": lambda x: x, # this is not from feynman ai
     "gaussian1": lambda x: np.exp(-x**2/2)/np.sqrt(2*np.pi),
     "gaussian2": lambda x, sigma: np.exp(-(x/sigma)**2/2)/(np.sqrt(2*np.pi)*sigma),
     "gaussian": lambda x, x_0, sigma: np.exp(-((x-x_0)/sigma)**2/2)/(np.sqrt(2*np.pi)*sigma),
@@ -12,6 +12,14 @@ equation_dict = {
     "exp": lambda x: np.exp(x),
     "f1": lambda x: np.sin(x) * x - 3,
     "f2": lambda x: x**2 + 3*x + 1,
+
+    'wave1': lambda x: np.sin(2*np.pi*x),
+    'wave2': lambda x: np.sin(np.pi*x + np.pi/2),
+    'wave3': lambda x: 0.5 * np.exp(-x) * np.sin(0.5*np.pi*x + 0.7*np.pi/2),
+    'wave4': lambda x: np.sin(1.4*np.pi*x + 0.1),
+    'wave5': lambda x: 0.7 * np.exp(-x),
+    'wave6': lambda x: -0.4 * np.exp(-x),
+    'wave7': lambda x: 0.3 * np.exp(-x) * np.sin(np.pi*x),
 }
 
 
