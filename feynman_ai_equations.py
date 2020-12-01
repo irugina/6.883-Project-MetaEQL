@@ -20,6 +20,14 @@ equation_dict = {
     'wave5': lambda x: 0.7 * np.exp(-x),
     'wave6': lambda x: -0.4 * np.exp(-x),
     'wave7': lambda x: 0.3 * np.exp(-x) * np.sin(np.pi*x),
+
+    'motion1': lambda x: x,
+    'motion2': lambda x: 0.5,
+    'motion3': lambda x: 0.3-1.2*x,
+    'motion4': lambda x: -(x+1)*(x-1),
+    'motion5': lambda x: 2*x**2 +3*x - 1.5,
+    'motion6': lambda x: (x - 0.5) * x * (x + 1.2),
+    'motion7': lambda x: x**2 - x,
 }
 
 
