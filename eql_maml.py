@@ -17,11 +17,12 @@ import time
 import argparse
 import json
 import traceback
+import copy
 
 from feynman_ai_equations import wave_exp, equation_dict
 from benchmark import *
 
-N_SUPPORT, N_QUERY = 100, 100
+N_SUPPORT, N_QUERY = 10, 10
 
 
 class Benchmark(BaseBenchmark):
@@ -119,7 +120,16 @@ class Benchmark(BaseBenchmark):
                             print(expr)
                             equations[func_name].append(expr)
                             train_losses[func_name].append(loss)
-
+                # deep copy self.net so that we don't see val functions during training
+                model = copy.deepcopy(self.net)
+                # validate
+                if val_func_names is not None:
+                    # Validation step
+                    for val_func_name in val_func_names:
+                        func = self.equation_dict[val_func_name]
+                        inputs, labels = generate_data(func, N_SUPPORT + N_QUERY)
+                        eql_val = self.get_loss(model, inputs, labels)
+                        val_losses[val_func_name].append(eql_val.item())
         for func_name in func_names:
             # ----------------------------- write results to disk
             fi = open(os.path.join(self.results_dir, 'eq_summary_{}.txt'.format(func_name)), 'w')
@@ -284,7 +294,7 @@ if __name__ == "__main__":
     if kwargs['exp_number'] in {1, 3, 5, 7, 9, 11}:
         kwargs['equation_dict'] = equation_dict
     if kwargs['exp_number'] == 13:
-        func_names, val_func_names, equation_dict = wave_exp(number_train=20, number_val=10)
+        func_names, val_func_names, equation_dict = wave_exp(number_train=10, number_val=2)
         kwargs['equation_dict'] = equation_dict
 
     bench = Benchmark(**kwargs)
