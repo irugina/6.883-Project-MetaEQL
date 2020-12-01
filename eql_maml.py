@@ -277,6 +277,9 @@ if __name__ == "__main__":
     elif kwargs['exp_number'] == 9:
         func_names = ['wave1', 'wave2', 'wave3', 'wave4', 'wave5', 'wave6']
         val_func_name = 'wave7'
+    elif kwargs['exp_number'] == 11:
+        func_names = ['motion1', 'motion2', 'motion3', 'motion4', 'motion5', 'motion6']
+        val_func_name = 'motion7'
     else:
         func_names = None
     bench.meta_learn(func_names=func_names, trials=10, val_func_name=val_func_name)
