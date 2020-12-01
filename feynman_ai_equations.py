@@ -55,6 +55,8 @@ def get_equation_wave():
         def func(x):
             return np.sin(f*2*np.pi*x + phi)
 
+        name = "case_{}_p1_{}_p2_{}".format(case, f, phi)
+
     elif case == 1:
         # Sum of exponentials
         a = random.uniform(-1, 1)
@@ -63,4 +65,20 @@ def get_equation_wave():
         def func(x):
             return a * np.exp(x) + b * np.exp(-x)
 
-    return func
+        name = "case_{}_p1_{}_p2_{}".format(case, a, b)
+
+    return func, name
+
+def wave_exp(number_train, number_val):
+    equation_dict = dict()
+    func_names, val_func_names = [], []
+    for _ in range(number_train):
+        func, name = get_equation_wave()
+        equation_dict[name] = func
+        func_names.append(name)
+    for _ in range(number_val):
+        func, name = get_equation_wave()
+        equation_dict[name] = func
+        val_func_names.append(name)
+    return func_names, val_func_names, equation_dict
+
