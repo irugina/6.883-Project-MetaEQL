@@ -274,16 +274,16 @@ if __name__ == "__main__":
         func_names = ["id", "gaussian1",  "exp", "sin", "f1", "f2"]
     elif kwargs['exp_number'] == 9:
         func_names = ['wave1', 'wave2', 'wave3', 'wave4', 'wave5', 'wave6']
-        val_func_name = 'wave7'
+        val_func_names = ['wave7']
     elif kwargs['exp_number'] == 11:
         func_names = ['motion1', 'motion2', 'motion3', 'motion4', 'motion5', 'motion6']
-        val_func_name = 'motion7'
+        val_func_names = ['motion7']
     else:
         func_names = None
 
-    if kwargs['exp_number'] in {1,3,5,7,9}:
+    if kwargs['exp_number'] in {1, 3, 5, 7, 9}:
         kwargs['equation_dict'] = equation_dict
-    if kwargs['exp_number'] == 11: #TODO
+    if kwargs['exp_number'] == 11:  # TODO
         func_names, val_func_names, equation_dict = wave_exp()
 
     bench = Benchmark(**kwargs)
