@@ -268,8 +268,8 @@ if __name__ == "__main__":
     parser.add_argument("--results-dir", type=str, default='results/benchmark/test')
     parser.add_argument("--n-layers", type=int, default=2, help="Number of hidden layers, L")
     parser.add_argument("--reg-weight", type=float, default=5e-3, help='Regularization weight, lambda')
-    parser.add_argument('--inner_learning_rate', type=float, default=1e-1, help='inner learning rate for training')
-    parser.add_argument('--outer_learning_rate', type=float, default=1e-2, help='outer learning rate for training')
+    parser.add_argument('--inner_learning_rate', type=float, default=1e-2, help='inner learning rate for training')
+    parser.add_argument('--outer_learning_rate', type=float, default=1e-3, help='outer learning rate for training')
     parser.add_argument('--inner_steps', type=int, default=1)
     parser.add_argument("--n-epochs1", type=int, default=20001, help="Number of epochs to train the first stage")
     parser.add_argument("--m", type=int, default=1, help="Increase Number of Activation Functions")
@@ -311,12 +311,11 @@ if __name__ == "__main__":
     if kwargs['exp_number'] in {1, 3, 5, 7, 9, 11}:
         kwargs['equation_dict'] = equation_dict
     if kwargs['exp_number'] == 13:
-        number_train=20
-        number_val=10
+        number_train=10
+        number_val=5
         ood=kwargs['ood']
-        print (ood)
         func_names, val_func_names, equation_dict = wave_exp(number_train=number_train, number_val=number_val, ood=ood)
-        kwargs['results_dir'] += "_{}_ntrain_{}_nval_ood_{}".format(number_train, number_val, ood)
+        kwargs['results_dir'] += "_{}_ntrain_{}_nval_ood_{}_inner_steps_{}_innerlr_{}_outerlr_{}".format(number_train,number_val,ood,kwargs['inner_steps'],kwargs['inner_learning_rate'],kwargs['outer_learning_rate'])
         kwargs['equation_dict'] = equation_dict
 
     bench = Benchmark(**kwargs)
