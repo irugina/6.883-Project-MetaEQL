@@ -52,14 +52,15 @@ def get_equation_kinematic():
     return func
 
 
-def get_equation_wave():
+def get_equation_wave(ood=False):
     case = random.randint(0, 1)
     func = None
     if case == 0:
         # Sinusoidal
         f = random.uniform(0.5, 2)
         phi = random.uniform(0, 2*np.pi)
-
+        if ood:
+            f = random.uniform(2, 4)
         def func(x):
             return np.sin(f*2*np.pi*x + phi)
 
@@ -70,6 +71,9 @@ def get_equation_wave():
         a = random.uniform(-1, 1)
         b = random.uniform(-1, 1)
 
+        if ood:
+            a, b = random.uniform(1, 2), random.uniform(1, 2)
+
         def func(x):
             return a * np.exp(x) + b * np.exp(-x)
 
@@ -77,7 +81,7 @@ def get_equation_wave():
 
     return func, name
 
-def wave_exp(number_train, number_val):
+def wave_exp(number_train, number_val, ood=False):
     equation_dict = dict()
     func_names, val_func_names = [], []
     for _ in range(number_train):
@@ -85,7 +89,7 @@ def wave_exp(number_train, number_val):
         equation_dict[name] = func
         func_names.append(name)
     for _ in range(number_val):
-        func, name = get_equation_wave()
+        func, name = get_equation_wave(ood)
         equation_dict[name] = func
         val_func_names.append(name)
     return func_names, val_func_names, equation_dict

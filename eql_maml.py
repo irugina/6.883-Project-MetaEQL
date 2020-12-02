@@ -294,7 +294,11 @@ if __name__ == "__main__":
     if kwargs['exp_number'] in {1, 3, 5, 7, 9, 11}:
         kwargs['equation_dict'] = equation_dict
     if kwargs['exp_number'] == 13:
-        func_names, val_func_names, equation_dict = wave_exp(number_train=10, number_val=2)
+        number_train=20
+        number_val=10
+        ood=True
+        func_names, val_func_names, equation_dict = wave_exp(number_train=number_train, number_val=number_val, ood=ood)
+        kwargs['results_dir'] += "_{}_ntrain_{}_nval_ood".format(number_train, number_val, ood)
         kwargs['equation_dict'] = equation_dict
 
     bench = Benchmark(**kwargs)
