@@ -99,7 +99,11 @@ class Benchmark(BaseBenchmark):
                     # Validation step
                     for val_func_name in val_func_names:
                         func = self.equation_dict[val_func_name]
-                        eql_val = self.adapt(func, val_func_name, verbose, val_eq, val_losses)
+                        eql_for_func = self.adapt(func, val_func_name, verbose)
+                        x, y = generate_data(func, N_QUERY)
+                        inputs, labels = x, y
+                        eval_loss += self.get_loss(eql_for_func, inputs, labels)
+                        val_losses[val_func_name].append(eval_loss.item())
         if self.train_mode == "joint":
             # -------------------- joint training
             for counter in range(self.n_epochs1):
@@ -120,14 +124,21 @@ class Benchmark(BaseBenchmark):
                             print(expr)
                             equations[func_name].append(expr)
                             train_losses[func_name].append(loss)
-                # deep copy self.net so that we don't see val functions during training
-                model = copy.deepcopy(self.net)
                 # validate
-                if val_func_names is not None:
-                    # Validation step
+                if val_func_names is not None: # Validation step
                     for val_func_name in val_func_names:
+                        # deep copy self.net so that we don't see val functions during training
+                        model = copy.deepcopy(self.net)
                         func = self.equation_dict[val_func_name]
-                        inputs, labels = generate_data(func, N_SUPPORT + N_QUERY)
+                        inputs, labels = generate_data(func, N_SUPPORT)
+                        # adapt
+                        loss = self.get_loss(model, inputs, labels)
+                        # bwd pass
+                        opt.zero_grad()
+                        loss.backward()
+                        opt.step()
+                        # eval
+                        inputs, labels = generate_data(func, N_QUERY)
                         eql_val = self.get_loss(model, inputs, labels)
                         val_losses[val_func_name].append(eql_val.item())
         for func_name in func_names:
